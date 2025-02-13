@@ -15,6 +15,7 @@ jobs:
     outputs:
       full_sha: ${{ steps.var.outputs.full_sha }}
       new_tag: ${{ steps.get_version.outputs.new_tag }}
+      ffi_tag: ${{ steps.get_version.outputs.ffi_tag }}
 
     steps:
       - name: Checkout Repo
@@ -41,6 +42,7 @@ jobs:
             });
             let newTag;
             let oldTag;
+            let ffiTag;
             if (tags.data.length === 0) {
               newTag = '1.0.0.0';
             } else {
@@ -62,13 +64,10 @@ jobs:
                   versionParts[3] += 1;
               }
             }
+            ffiTag = newTag.replace(".",",");
             core.setOutput("new_tag", newTag); 
+            core.setOutput("ffi_tag", ffiTag); 
             core.setOutput("old_tag", oldTag);
-      
-      - name: FFI Version Format
-        id: version_format
-        run: echo "formatted_version=${{ steps.get_version.outputs.new_tag }} | sed 's/\./,/g'" >> $GITHUB_ENV
-        shell: bash
 
       - name: Create Version File
         id: create_version_file
@@ -83,8 +82,8 @@ jobs:
             ffi=FixedFileInfo(
           # filevers and prodvers should be always a tuple with four items: (1, 2, 3, 4)
           # Set not needed items to zero 0.
-          filevers=(${env:formatted_version}),
-          prodvers=(${env:formatted_version}),
+          filevers=(${{ steps.get_version.outputs.ffi_tag }}),
+          prodvers=(${{ steps.get_version.outputs.ffi_tag }}),
           # Contains a bitmask that specifies the valid bits 'flags'
           mask=0x3f,
           # Contains a bitmask that specifies the Boolean attributes of the file.
@@ -108,7 +107,7 @@ jobs:
               u'040904B0',
               [StringStruct(u'CompanyName', u'github.com/xesdoog'),
               StringStruct(u'FileDescription', u'YimLaunchpad'),
-              StringStruct(u'FileVersion', u'${env:formatted_version}'),
+              StringStruct(u'FileVersion', u'${{ steps.get_version.outputs.new_tag }}'),
               StringStruct(u'InternalName', u'YLP'),
               StringStruct(u'LegalCopyright', u'Copyright (c) SAMURAI - 2025'),
               StringStruct(u'OriginalFilename', u'YimLaunchpad.exe'),
