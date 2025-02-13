@@ -1,0 +1,13 @@
+bs4
+glfw
+imgui
+numpy
+opencv-python
+psutil
+pyinjector
+pillow
+PyGitHub
+PyOpenGL
+PyOpenGL_accelerate
+pywin32
+requests
