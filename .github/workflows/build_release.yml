@@ -74,7 +74,7 @@ jobs:
         id: create_version_file
         run: |
           New-Item ./version.txt
-          Set-Content ./version.txt @"
+          Set-Content -encoding ASCII ./version.txt @"
           # UTF-8
           #
           # For more details about fixed file info 'ffi' see:

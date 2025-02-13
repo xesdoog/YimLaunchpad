@@ -360,11 +360,11 @@ def download_updater():
     try:
         task_status = "Fetching updater from GitHub..."
         response = requests.get(
-            "https://github.com/xesdoog/YMU-Updater/releases/download/latest/ylp_updater.exe"
+            "https://github.com/xesdoog/YimLaunchpad-Updater/releases/download/YLPU/ylp_updater.exe"
         )
         if response.status_code == 200:
             total_size = response.headers.get("content-length")
-            LOG.info("Downloading self updater from https://github.com/xesdoog/YMU-Updater/releases/download/latest/ylp_updater.exe")
+            LOG.info("Downloading self updater from https://github.com/xesdoog/YimLaunchpad-Updater/releases/download/YLPU/ylp_updater.exe")
             with open("ymu_self_updater.exe", "wb") as f:
                 for chunk in response.iter_content(4096):
                     f.write(chunk)
