@@ -104,7 +104,7 @@ def get_launchpad_version():
         s = str(result)
         result = s.replace("</a>", "")
         charLength = len(result)
-        latest_version = result[charLength - 6:]
+        latest_version = result[charLength - 7:]
         return latest_version
     except Exception as e:
         LOG.info(f'Failed to get the latest GitHub version! Traceback: {e}')

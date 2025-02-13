@@ -35,9 +35,11 @@ from imgui.integrations.glfw import GlfwRenderer
 from pyinjector              import inject
 from src                     import gui
 from time                    import sleep
+from win10toast              import ToastNotifier
 
 Icons             = gui.Icons
 threadpool        = ThreadPoolExecutor(max_workers = 3)
+notifier          = ToastNotifier()
 progress_value    = 0
 process_id        = 0
 pending_update    = False
@@ -131,6 +133,7 @@ def remove_updater():
             LOG.error(f"Failed to delet the file due to an OS error: {e}")
             pass
 
+
 def colored_button(label: str, color: list, hovered_color: list, active_color: list) -> bool:
     imgui.push_style_color(imgui.COLOR_BUTTON, color[0], color[1], color[2])
     imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, hovered_color[0], hovered_color[1], hovered_color[2])
@@ -153,6 +156,13 @@ def tooltip(text= "", font = None, alpha = 0.75):
                 imgui.text(text)
             imgui.pop_text_wrap_pos()
         imgui.pop_style_var()
+
+
+def toast(message = "", time = 10, is_thread = False):
+    try:
+        notifier.show_toast(title = "YimLaunchpad", msg = message, duration = time, icon_path = res_path("img/ylp_icon.ico"), threaded = is_thread)
+    except TypeError:
+        pass
 
 
 def stringFind(string: str, sub: str):
@@ -228,6 +238,7 @@ def check_for_ylp_update():
                 LOG.info('Update available!')
                 task_status_col = ImGreen
                 task_status = f"Update {remote_version} is available."
+                toast(f"YimLaunchpad v{remote_version} is available.", 15, True)
                 ylp_update_avail = True
             elif YML_VERSION == remote_version:
                 LOG.info(f'No updates were found! {YML_VERSION} is the latest version.')
@@ -240,7 +251,7 @@ def check_for_ylp_update():
                 ylp_update_avail = False
                 LOG.error(f'Local YimLaunchpad version is {YML_VERSION}. This is not a valid version! Are you a dev or a skid?')
                 task_status_col = ImRed
-                task_status = "Invalid version detected!\nPlease download YMU from the official Github repository."
+                task_status = "Invalid version detected!\nPlease download YimLaunchpad from the official Github repository."
                 sleep(5)
                 task_status_col = None
                 task_status = ""
@@ -273,6 +284,7 @@ def check_for_yim_update():
             if local_sha != remote_sha:
                 LOG.info('Update available!')
                 task_status = "Update available."
+                toast("A new update for YimMenu is available.", 15, True)
                 task_status_col = ImGreen
                 yim_update_avail = True
             else:
@@ -310,6 +322,12 @@ def yimlaunchapd_init():
             yim_update_avail = False
     else:
         yim_update_avail = False
+    task_status = "Checking for YimLaunchpad updates..."
+    check_for_ylp_update()
+    sleep(1)
+    task_status = "Checking for YimMenu updates..."
+    check_for_yim_update
+    sleep(1)
     task_status = ""
 
 ylp_init_thread = threadpool.submit(yimlaunchapd_init)
@@ -339,7 +357,7 @@ def download_yim_menu():
                 yim_update_avail = False
                 sleep(5)
                 if not os.path.isfile(YIMDLL_FILE):
-                    task_status = "File was removed!\nMake sure to either turn off your antivirus or add YMU folder to exceptions."
+                    task_status = "File was removed!\nMake sure to either turn off your antivirus or add YimLaunchpad to exceptions in your anti-virus."
                     LOG.error("The dll was removed by antivirus!")
             else:
                 task_status = "Download failed! Check the log for more details."
@@ -370,7 +388,7 @@ def download_updater():
         if response.status_code == 200:
             total_size = response.headers.get("content-length")
             LOG.info("Downloading self updater from https://github.com/xesdoog/YimLaunchpad-Updater/releases/download/YLPU/ylp_updater.exe")
-            with open("ymu_self_updater.exe", "wb") as f:
+            with open("ylp_updater.exe", "wb") as f:
                 for chunk in response.iter_content(4096):
                     f.write(chunk)
                     progress_value += len(chunk) / total_size
