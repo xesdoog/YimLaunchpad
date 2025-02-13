@@ -63,10 +63,10 @@ jobs:
               } else {
                   versionParts[3] += 1;
               }
+              newTag = `${versionParts.join('.')}`;
+              oldTag = latestTag;
+              ffiTag = newTag.replaceAll(".",",");
             }
-            newTag = `${versionParts.join('.')}`;
-            oldTag = latestTag;
-            ffiTag = newTag.replaceAll(".",",");
             core.setOutput("new_tag", newTag); 
             core.setOutput("ffi_tag", ffiTag); 
             core.setOutput("old_tag", oldTag);
