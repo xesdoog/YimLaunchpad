@@ -100,7 +100,7 @@ def get_launchpad_version():
     try:
         r = requests.get("https://github.com/xesdoog/YimLaunchpad/tags")
         soup = BeautifulSoup(r.content, "html.parser")
-        result = soup.find(class_="Link--primary Link")
+        result = soup.find(class_ = "Link--primary Link")
         s = str(result)
         result = s.replace("</a>", "")
         charLength = len(result)

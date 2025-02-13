@@ -206,7 +206,7 @@ def get_status_widget_color():
 
     if task_status != "":
         if stringFind(task_status, "error") or stringFind(task_status, "failed"):
-            return ImRed
+            return ImRed, "Error"
         else:
             for thread in (
                 ylp_init_thread,
@@ -221,8 +221,8 @@ def get_status_widget_color():
                 lua_downl_thread,
                 ):
                 if thread and not thread.done():
-                    return ImYellow
-    return ImGreen
+                    return ImYellow, "Busy"
+    return ImGreen, "Ready"
 
 
 def check_for_ylp_update():
@@ -306,6 +306,7 @@ def check_for_yim_update():
 def yimlaunchapd_init():
     global yim_update_avail
     global task_status
+    global task_status_col
     global default_cfg
     global dll_files
     global repos
@@ -322,12 +323,15 @@ def yimlaunchapd_init():
             yim_update_avail = False
     else:
         yim_update_avail = False
+    task_status_col = None
     task_status = "Checking for YimLaunchpad updates..."
     check_for_ylp_update()
     sleep(1)
+    task_status_col = None
     task_status = "Checking for YimMenu updates..."
     check_for_yim_update
     sleep(1)
+    task_status_col = None
     task_status = ""
 
 ylp_init_thread = threadpool.submit(yimlaunchapd_init)
@@ -378,37 +382,37 @@ def download_updater():
     global progress_value
     global pending_update
 
-    pending_update = False
     task_status_col = None
     try:
         task_status = "Fetching updater from GitHub..."
-        response = requests.get(
-            "https://github.com/xesdoog/YimLaunchpad-Updater/releases/download/YLPU/ylp_updater.exe"
-        )
-        if response.status_code == 200:
-            total_size = response.headers.get("content-length")
-            LOG.info("Downloading self updater from https://github.com/xesdoog/YimLaunchpad-Updater/releases/download/YLPU/ylp_updater.exe")
-            with open("ylp_updater.exe", "wb") as f:
-                for chunk in response.iter_content(4096):
-                    f.write(chunk)
-                    progress_value += len(chunk) / total_size
-                task_status = "Download complete."
-        else:
-            LOG.error(f"An error occured while trying to fetch updater's repository. Status Code: {response.status_code}")
-            task_status = "Failed to download the updater. Check the log for more details."
-            task_status_col = ImRed
+        with requests.get("https://github.com/xesdoog/YimLaunchpad-Updater/releases/download/YLPU/ylp_updater.exe", stream = True) as response:
+            response.raise_for_status()
+            total_size = int(response.headers.get("content-length", 0))
+            current_size = 0
+            if response.status_code == 200:
+                LOG.info("Downloading self updater from https://github.com/xesdoog/YimLaunchpad-Updater/releases/download/YLPU/ylp_updater.exe")
+                with open("./ylp_updater.exe", "wb") as f:
+                    for chunk in response.iter_content(131072):
+                        f.write(chunk)
+                        current_size += len(chunk)
+                        progress_value = current_size / total_size
+                    task_status = "Download complete."
+                    for i in range(3):
+                        task_status = f"Restarting in ({3 - i}) seconds"
+                        sleep(1)
+                    progress_value = 0
+                    task_status = ""
+                    task_status_col = None
+                    pending_update = True
+            else:
+                LOG.error(f"An error occured while trying to fetch updater's repository. Status Code: {response.status_code}")
+                task_status = "Failed to download the updater. Check the log for more details."
+                task_status_col = ImRed
     except Exception as e:
         LOG.error(f'An error occured! Traceback: {e}')
-    
-    sleep(3)
-    progress_value = 0
-    task_status = ""
-    task_status_col = None
-    if os.path.exists("./ylp_updater.exe"):
-        for i in range(3):
-            task_status = f"Restarting in ({3 - i}) seconds"
-            sleep(1)
-        pending_update = True
+        progress_value = 0
+        task_status = ""
+        task_status_col = None
 
 
 def run_ylp_update_check():
@@ -804,7 +808,7 @@ def OnDraw():
 
     impl.refresh_font_texture()
 
-    while not gui.glfw.window_should_close(window):
+    while not gui.glfw.window_should_close(window) and not pending_update:
         gui.glfw.poll_events()
         impl.process_inputs()
         imgui.new_frame()
@@ -1003,8 +1007,9 @@ def OnDraw():
 
         imgui.spacing()
         with imgui.begin_child("##feedback"):
-            status_col = get_status_widget_color()
+            status_col, status = get_status_widget_color()
             imgui.text_colored(Icons.Circle, status_col[0], status_col[1], status_col[2], 0.8)
+            tooltip(status)
             imgui.push_text_wrap_pos(win_w - 15)
             with imgui.font(small_font):
                 imgui.same_line()
