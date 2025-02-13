@@ -64,7 +64,7 @@ jobs:
                   versionParts[3] += 1;
               }
             }
-            newTag = versionParts.join('.');
+            newTag = `${versionParts.join('.')}`;
             oldTag = latestTag;
             ffiTag = newTag.replaceAll(".",",");
             core.setOutput("new_tag", newTag); 
