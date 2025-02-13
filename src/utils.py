@@ -98,7 +98,7 @@ LOG = LOGGER()
 
 def get_launchpad_version():
     try:
-        r = requests.get("https://github.com/YimMenu-Lua/Samurais-Scripts/tags")
+        r = requests.get("https://github.com/xesdoog/YimLaunchpad/tags")
         soup = BeautifulSoup(r.content, "html.parser")
         result = soup.find(class_="Link--primary Link")
         s = str(result)

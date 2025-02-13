@@ -62,7 +62,6 @@ YML_VERSION       = "1.0.0.0"
 NIGHTLY_URL       = "https://github.com/Mr-X-GTA/YimMenu/releases/download/nightly/YimMenu.dll"
 YIMDLL_PATH       = os.path.join(LAUNCHPAD_PATH, "YimMenu")
 CONFIG_PATH       = os.path.join(LAUNCHPAD_PATH, "settings.json")
-# LOG_BACKUP        = os.path.join(LAUNCHPAD_PATH, "Log Backup")
 YIMDLL_FILE       = os.path.join(YIMDLL_PATH, 'YimMenu.dll')
 YIM_MENU_PATH     = os.path.join(os.getenv("APPDATA"), "YimMenu")
 YIM_SETTINGS      = os.path.join(YIM_MENU_PATH, "settings.json")
@@ -122,6 +121,15 @@ def set_cursor(window: object, cursor: object):
 def set_window_size(window: object, width: int, height: int):
     return gui.glfw.set_window_size(window, width, height)
 
+
+def remove_updater():
+    if os.path.exists("./ylp_updater.exe"):
+        LOG.info('Updater no longer needed. Deleting the file...')
+        try:
+            os.remove("./ylp_updater.exe")
+        except OSError as e:
+            LOG.error(f"Failed to delet the file due to an OS error: {e}")
+            pass
 
 def colored_button(label: str, color: list, hovered_color: list, active_color: list) -> bool:
     imgui.push_style_color(imgui.COLOR_BUTTON, color[0], color[1], color[2])
@@ -289,12 +297,10 @@ def yimlaunchapd_init():
     global default_cfg
     global dll_files
     global repos
-    global task_status_col
 
-    task_status_col = None
     task_status = "Initializing YimLaunchpad, please wait..."
 
-    remove_self_updater()
+    remove_updater()
     if not os.path.exists(CONFIG_PATH):
         utils.save_cfg(CONFIG_PATH, default_cfg)
     if os.path.isfile(YIMDLL_FILE):
@@ -304,7 +310,6 @@ def yimlaunchapd_init():
             yim_update_avail = False
     else:
         yim_update_avail = False
-    task_status_col = None
     task_status = ""
 
 ylp_init_thread = threadpool.submit(yimlaunchapd_init)
@@ -386,12 +391,6 @@ def download_updater():
             task_status = f"Restarting in ({3 - i}) seconds"
             sleep(1)
         pending_update = True
-
-
-def remove_self_updater():
-    if os.path.isfile("./ylp_updater.exe"):
-        LOG.info('Updater no longer needed. Deleting the file...')
-        os.remove("./ylp_updater.exe")
 
 
 def run_ylp_update_check():
@@ -572,14 +571,6 @@ def background_thread():
     except Exception as e:
         LOG.error(f"An error has occured while trying to find the game's process. Traceback: {e}")
     sleep(1)
-    # # move log backups to the backup folder
-    # for i in range(5):
-    #     if os.path.exists(os.path.join(LAUNCHPAD_PATH, f"ylp.log.{i}")):
-    #         if not os.path.exists(LOG_BACKUP):
-    #             os.makedirs(LOG_BACKUP)
-    #         if os.path.exists(os.path.join(LOG_BACKUP, f"ylp.log.{i}")):
-    #             os.remove(os.path.join(LOG_BACKUP, f"ylp.log.{i}"))
-    #         os.rename(os.path.join(LAUNCHPAD_PATH, f"ylp.log.{i}"), os.path.join(LOG_BACKUP, f"ylp.log.{i}"))
 
 
 def run_background_thread():
