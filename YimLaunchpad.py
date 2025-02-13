@@ -395,7 +395,7 @@ def download_updater():
                     for chunk in response.iter_content(131072):
                         f.write(chunk)
                         current_size += len(chunk)
-                        progress_value = current_size / total_size
+                        progress_value = int(current_size) / int(total_size)
                     task_status = "Download complete."
                     for i in range(3):
                         task_status = f"Restarting in ({3 - i}) seconds"
