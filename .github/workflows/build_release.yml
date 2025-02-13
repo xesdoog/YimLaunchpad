@@ -73,7 +73,8 @@ jobs:
       - name: Create Version File
         id: create_version_file
         run: |
-          $versionInfo = @"
+          New-Item ./version.txt
+          Set-Content ./version.txt @"
           # UTF-8
           #
           # For more details about fixed file info 'ffi' see:
@@ -118,7 +119,6 @@ jobs:
             ]
           )
           "@
-          $versionInfo | Set-Content -Path "veresion.txt" -Encoding UTF8
         shell: pwsh
 
       - name: Install dependencies

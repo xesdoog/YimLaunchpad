@@ -293,6 +293,8 @@ def yimlaunchapd_init():
 
     task_status_col = None
     task_status = "Initializing YimLaunchpad, please wait..."
+
+    remove_self_updater()
     if not os.path.exists(CONFIG_PATH):
         utils.save_cfg(CONFIG_PATH, default_cfg)
     if os.path.isfile(YIMDLL_FILE):
@@ -347,6 +349,51 @@ def download_yim_menu():
     progress_value = 0
 
 
+def download_updater():
+    global task_status
+    global task_status_col
+    global progress_value
+    global pending_update
+
+    pending_update = False
+    task_status_col = None
+    try:
+        task_status = "Fetching updater from GitHub..."
+        response = requests.get(
+            "https://github.com/xesdoog/YMU-Updater/releases/download/latest/ylp_updater.exe"
+        )
+        if response.status_code == 200:
+            total_size = response.headers.get("content-length")
+            LOG.info("Downloading self updater from https://github.com/xesdoog/YMU-Updater/releases/download/latest/ylp_updater.exe")
+            with open("ymu_self_updater.exe", "wb") as f:
+                for chunk in response.iter_content(4096):
+                    f.write(chunk)
+                    progress_value += len(chunk) / total_size
+                task_status = "Download complete."
+        else:
+            LOG.error(f"An error occured while trying to fetch updater's repository. Status Code: {response.status_code}")
+            task_status = "Failed to download the updater. Check the log for more details."
+            task_status_col = ImRed
+    except Exception as e:
+        LOG.error(f'An error occured! Traceback: {e}')
+    
+    sleep(3)
+    progress_value = 0
+    task_status = ""
+    task_status_col = None
+    if os.path.exists("./ylp_updater.exe"):
+        for i in range(3):
+            task_status = f"Restarting in ({3 - i}) seconds"
+            sleep(1)
+        pending_update = True
+
+
+def remove_self_updater():
+    if os.path.isfile("./ylp_updater.exe"):
+        LOG.info('Updater no longer needed. Deleting the file...')
+        os.remove("./ylp_updater.exe")
+
+
 def run_ylp_update_check():
     global ylp_ver_thread
     if ylp_ver_thread and not ylp_ver_thread.done():
@@ -372,9 +419,11 @@ def run_yim_download():
 
 
 def run_ylp_update():
-    global task_status, ylp_update_avail
-    task_status = ""
-    ylp_update_avail = False
+    global ylp_down_thread
+    if ylp_down_thread and not ylp_down_thread.done():
+        pass
+    else:
+        ylp_down_thread = threadpool.submit(download_updater)
 
 
 def check_lua_repos():
@@ -398,7 +447,6 @@ def check_lua_repos():
         task_status_col = None
         task_status = ""
         pass
-
 
 
 def run_lua_repos_check():
@@ -433,7 +481,6 @@ def add_file_with_short_sha(file_path):
         sleep(3)
         task_status_col = None
         task_status = ""
-
 
 
 def run_file_add_thread(file_path):
