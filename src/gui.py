@@ -21,23 +21,23 @@ def start_file_dialog(extension: str, multiselect: bool) -> list | str:
         fnames = []
         customfilter = "All Files\0*.*\0"
         fname, customfilter, _ = GetOpenFileNameW(
-            InitialDir   = os.getcwd(),
-            Flags        = multiselect and
-                            win32con.OFN_EXPLORER | win32con.OFN_ALLOWMULTISELECT or
-                            win32con.OFN_EXPLORER,
-            DefExt       = None,
-            Title        = "Select DLL",
-            File         = "",
-            MaxFile      = 65535,
-            Filter       = extension,
-            CustomFilter = customfilter,
-            FilterIndex  = 0,
+            InitialDir=os.getcwd(),
+            Flags=multiselect
+            and win32con.OFN_EXPLORER | win32con.OFN_ALLOWMULTISELECT
+            or win32con.OFN_EXPLORER,
+            DefExt=None,
+            Title="Select DLL",
+            File="",
+            MaxFile=65535,
+            Filter=extension,
+            CustomFilter=customfilter,
+            FilterIndex=0,
         )
 
-        if str(fname).find('\x00'):
-            split_n = str(fname).split('\x00')
+        if str(fname).find("\x00"):
+            split_n = str(fname).split("\x00")
             fnames.append(split_n)
-        
+
         if len(fnames[0]) > 1:
             filePath_lst = []
             parent_path = fnames[0][0]
@@ -66,7 +66,9 @@ def fb_to_window_factor(window):
     return max(float(fb_w) / win_w, float(fb_h) / win_h)
 
 
-def new_window(title: str, width: int, height: int, resizable: bool) -> tuple[object, object]:
+def new_window(
+    title: str, width: int, height: int, resizable: bool
+) -> tuple[object, object]:
 
     if not glfw.init():
         raise Exception("Failed to initialize OpenGL context!")
@@ -79,19 +81,15 @@ def new_window(title: str, width: int, height: int, resizable: bool) -> tuple[ob
 
     monitor = glfw.get_primary_monitor()
     vidMode = glfw.get_video_mode(monitor)
-    pos_x   = vidMode.size.width
-    pos_y   = vidMode.size.height
+    pos_x = vidMode.size.width
+    pos_y = vidMode.size.height
 
-    window       = glfw.create_window(int(width), int(height), title, None, None)
+    window = glfw.create_window(int(width), int(height), title, None, None)
     ibeam_cursor = glfw.create_standard_cursor(glfw.IBEAM_CURSOR)
-    icon         = Image.open(relative_path("img/ylp_icon.ico"))
-    icon         = icon.convert("RGBA")
-    icon_data    = np.array(icon, dtype=np.uint8)
-    icon_struct  = [
-        icon.width,
-        icon.height,
-        icon_data
-    ]
+    icon = Image.open(relative_path("img/ylp_icon.ico"))
+    icon = icon.convert("RGBA")
+    icon_data = np.array(icon, dtype=np.uint8)
+    icon_struct = [icon.width, icon.height, icon_data]
     glfw.set_window_pos(window, int(pos_x / 2 - width / 2), int(pos_y / 2 - height / 2))
     glfw.set_window_icon(window, 1, icon_struct)
     glfw.make_context_current(window)
@@ -104,25 +102,25 @@ def new_window(title: str, width: int, height: int, resizable: bool) -> tuple[ob
 
 
 class Icons:
-    Star      = "\uf005"
+    Star = "\uf005"
     Checkmark = "\uf00c"
-    Close     = "\uf00d"
-    Gear      = "\uf013"
-    Down      = "\uf01a"
-    Up        = "\uf01b"
-    Download  = "\uf019"
-    Refresh   = "\uf021"
-    List      = "\uf03a"
-    Play      = "\uf04b"
-    Plus      = "\uf055"
-    Minus     = "\uf056"
-    Folder    = "\uf07c"
-    GitHub    = "\uf09b"
-    Save      = "\uf0c7"
+    Close = "\uf00d"
+    Gear = "\uf013"
+    Down = "\uf01a"
+    Up = "\uf01b"
+    Download = "\uf019"
+    Refresh = "\uf021"
+    List = "\uf03a"
+    Play = "\uf04b"
+    Plus = "\uf055"
+    Minus = "\uf056"
+    Folder = "\uf07c"
+    GitHub = "\uf09b"
+    Save = "\uf0c7"
     Dashboard = "\uf0e4"
-    Spinner   = "\uf110"
-    Circle    = "\uf111"
-    Code      = "\uf121"
-    Rocket    = "\uf135"
-    File_c    = "\uf1c9"
-    Trash     = "\uf1f8"
+    Spinner = "\uf110"
+    Circle = "\uf111"
+    Code = "\uf121"
+    Rocket = "\uf135"
+    File_c = "\uf1c9"
+    Trash = "\uf1f8"

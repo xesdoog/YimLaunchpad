@@ -11,4 +11,5 @@ PyOpenGL
 PyOpenGL_accelerate
 pywin32
 requests
-win10toast
+requests_cache
+win11toast
