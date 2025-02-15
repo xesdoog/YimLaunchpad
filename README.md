@@ -28,7 +28,7 @@ A launchpad for YimMenu.
 - Start the game.
 - Inject DLLs into the game's process.
 
-## Lua Scripts
+### Lua Scripts
 
 - Download Lua scripts from [YimMenu-Lua](https://github.com/YimMenu-Lua)
 - Enable/Disable scripts.
@@ -41,7 +41,7 @@ A launchpad for YimMenu.
 >
 > Loose files and folders named anything other than the script's repository name will not be recognized as installed scripts.
 
-## Settings
+### Settings
 
 - For now this only has a button to check for updates/update the launchpad and a button to open the launchpad's folder which is located in `%AppData%\YimLaunchpad`. You can find the log there in case you run into some bugs.
 - More stuff will be added to this tab in the future.
