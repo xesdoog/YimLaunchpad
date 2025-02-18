@@ -6,3 +6,4 @@
 *.code-workspace
 *.ini
 *.json
+memory.py

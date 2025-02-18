@@ -5,17 +5,12 @@ A launchpad for YimMenu.
 
 ###  
 
-> [!NOTE]
-> **Work In Progress**. Uploaded for testing purposes.
-> 
-> General stuff like downloading and keeping YimMenu up-to-date, launching the game, injecting the dll, downloading Lua scripts all work.
->
-> Further improvements will be implemented.
-
-###  
-
 > [!WARNING]
 > Avoid spamming the Lua Scripts tab *(refreshing the list multiple times, closing and relaunching the app, etc...)*. The GitHub API has a rate limit for non-authenticated requests and will put you on a timeout if you exceed that limit.
+>
+> If you want to increase the limit to 5k requests, you have the option to login to GitHub through YimLaunchpad using a device code.
+
+###  
 
 ## Features
 
@@ -24,9 +19,10 @@ A launchpad for YimMenu.
 - Download YimMenu.
 - Keep it updated (auto-checks for updates on launch and sends toast notifications).
 - Enable/Disable YimMenu's debug console. **(Do not change it if the menu is already injected)**
-- Add custom DLLs
+- Add custom DLLs.
 - Start the game.
 - Inject DLLs into the game's process.
+- Auto-Exit after injecting any DLL.
 
 ### Lua Scripts
 
@@ -34,22 +30,41 @@ A launchpad for YimMenu.
 - Enable/Disable scripts.
 - Delete scripts.
 - Enable/Disable auto-reloading of Lua scripts **(Same as the option in YimMenu. Do not change it if the menu is already injected)**
-- Auto-detects script updates and sends toast notifications. **(Do not abuse this because the GitHub API has a rate limit of 60/h for non-authenticated requests)**
+- Auto-detects script updates when fetching repositories and sends toast notifications.
 
 > [!IMPORTANT]
-> To benefit from the Lua Scripts feature, you have to download the scripts using the launcher. The reason for that is simply because YimLaunchpad organizes your scripts into folders named after the script's GitHub repository. This allows it to track your enabled/disabled scripts, check the last time a script was updated and compare it to the repository, etc...
+> To benefit from the Lua Scripts features, you have to download the scripts using the launcher. The reason for that is simply because YimLaunchpad organizes your scripts into folders named after the script's GitHub repository. This allows it to track your enabled/disabled scripts, check the last time a script was updated and compare it to the repository, etc...
 >
 > Loose files and folders named anything other than the script's repository name will not be recognized as installed scripts.
 
 ### Settings
 
-- For now this only has a button to check for updates/update the launchpad and a button to open the launchpad's folder which is located in `%AppData%\YimLaunchpad`. You can find the log there in case you run into some bugs.
-- More stuff will be added to this tab in the future.
+- Manually check for updates and update the launchpad.
+- Open the launchpad's folder which is located in `%AppData%\YimLaunchpad`.
+- Add `YimLaunchpad.exe` and its parent folder to Windows Defender exclusions using Windows Powershell™.
+- Enable/disable `Auto-Exit`.
+- Login/logout to/from GitHub.
+
+###  
 
 ## Showcase
 
-![image](https://github.com/user-attachments/assets/2868ae11-3210-451f-9e41-691a93d4e330)
+### Dashboard
 
-![image](https://github.com/user-attachments/assets/d95f89f8-5a0c-49bd-ad06-190f652c6811)
+![dashboard](https://github.com/user-attachments/assets/c21d2142-7283-46dd-8968-1ff9c71d4e23)
 
-![image](https://github.com/user-attachments/assets/55a3c25d-45f9-4722-9e18-d1a4f4a60746)
+### Lua Scripts (Without GitHub Auth)
+
+![lua](https://github.com/user-attachments/assets/866f2dde-b743-43e7-a265-df3dd62ad08d)
+
+### Settings (Without GitHub Auth)
+
+![settings](https://github.com/user-attachments/assets/2c53073f-8424-4bcc-b273-9d17da324d1e)
+
+### Lua Scripts (With GitHub Auth)
+
+![lua_1](https://github.com/user-attachments/assets/32a292e9-54f0-4bff-aeeb-e86b11e70ec5)
+
+### Settings (With GitHub Auth)
+
+![settings_1](https://github.com/user-attachments/assets/886df881-ab24-4bf8-91a7-74b8a6aef62a)

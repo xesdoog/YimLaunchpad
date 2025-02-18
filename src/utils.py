@@ -5,15 +5,19 @@ import logging.handlers
 import os
 import platform
 import requests
+import shutil
 import subprocess
 import sys
 import webbrowser
+import win32cred
 import winreg
 
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
-from github import Github, RateLimitExceededException, GithubRetry
-from requests_cache import DO_NOT_CACHE, get_cache, install_cache
+from github import Github, RateLimitExceededException
+from requests_cache import DO_NOT_CACHE, install_cache
+from time import sleep
+
 
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), "YimLaunchpad")
 if not os.path.exists(LAUNCHPAD_PATH):
@@ -21,16 +25,21 @@ if not os.path.exists(LAUNCHPAD_PATH):
 
 WORKDIR = os.path.abspath(os.getcwd())
 UPDATE_PATH = os.path.join(LAUNCHPAD_PATH, "update")
+CONFIG_PATH = os.path.join(LAUNCHPAD_PATH, "settings.json")
 YIM_MENU_PATH = os.path.join(os.getenv("APPDATA"), "YimMenu")
 YIM_SCRIPTS_PATH = os.path.join(YIM_MENU_PATH, "scripts")
 LOG_FILE = os.path.join(LAUNCHPAD_PATH, "yimlaunchpad.log")
 LOG_BACKUP = os.path.join(LAUNCHPAD_PATH, "Log Backup")
-
+LAUNCHPAD_URL = "https://github.com/xesdoog/YimLaunchpad"
+CLIENT_ID = "Iv23lij2DMB5JgpS7rK7"
+AUTH_TOKEN = None
 
 install_cache(
+    cache_name="yimlaunchpad_cache",
     cache_control=True,
+    use_temp=True,
     urls_expire_after={
-        "*.github.com": 360,
+        "api.github.com/*": 360,
         "*": DO_NOT_CACHE,
         "github.com/xesdoog/*": DO_NOT_CACHE,
         "github.com/Mr-X-GTA/*": DO_NOT_CACHE,
@@ -38,8 +47,71 @@ install_cache(
 )
 
 
-def executable_path():
+def executable_dir():
     return os.path.dirname(os.path.abspath(sys.argv[0]))
+
+
+def store_token(token):
+    credential = {
+        "Type": win32cred.CRED_TYPE_GENERIC,
+        "TargetName": "GIT_AUTH_TOKEN",
+        "CredentialBlob": token,
+        "Persist": win32cred.CRED_PERSIST_LOCAL_MACHINE
+    }
+    win32cred.CredWrite(credential, 0)
+
+
+def get_token():
+    try:
+        cred = win32cred.CredRead("GIT_AUTH_TOKEN", win32cred.CRED_TYPE_GENERIC)
+        return cred["CredentialBlob"].decode("utf-16")
+    except:
+        return None
+
+
+def delete_token():
+    try:
+        win32cred.CredDelete("GIT_AUTH_TOKEN", win32cred.CRED_TYPE_GENERIC)
+    except Exception as e:
+        LOG.error(f"Failed to delete GitHub token: {e}")
+
+
+def read_cfg(file):
+    if os.path.exists(file):
+        with open(file, "r") as f:
+            data = json.load(f)
+            f.close()
+            return data
+    return None
+
+
+def read_cfg_item(file, item_name):
+    if os.path.exists(file):
+        with open(file, "r") as f:
+            data = json.load(f)
+            if item_name in data:
+                f.close()
+                return data[item_name]
+    return None
+
+
+def save_cfg(file, list):
+    open_mode = os.path.exists(file) and "w" or "x"
+    with open(file, open_mode) as f:
+        json.dump(list, f, indent=4)
+        f.close()
+
+
+def save_cfg_item(file, item_name, value):
+    config = read_cfg(file)
+    with open(file, "w") as f:
+        config[item_name] = value
+        json.dump(config, f, indent=4)
+        f.close()
+
+
+if read_cfg_item(CONFIG_PATH, "git_logged_in"):
+    AUTH_TOKEN = get_token()
 
 
 class CustomLogHandler(logging.FileHandler):
@@ -105,7 +177,7 @@ class LOGGER:
         userOSrel = platform.release()
         userOSver = platform.version()
         workDir = parent_path
-        exeDir = executable_path()
+        exeDir = executable_dir()
         logfile = open(LOG_FILE, "a")
         logfile.write("\n--- YimLaunchpad ---\n\n")
         logfile.write(f"    ¤ Version: {version}\n")
@@ -121,9 +193,169 @@ class LOGGER:
 LOG = LOGGER()
 
 
+class GitHubOAuth:
+    _status = ""
+    _instance = None
+    _abort = False
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(GitHubOAuth, cls).__new__(cls)
+        return cls._instance
+
+    @classmethod
+    def update_status(cls, new_status: str):
+        cls._status = new_status
+
+    @classmethod
+    def get_status(cls):
+        return cls._status
+
+    def reset_abort(func):
+        def wrapper(self, *args, **kwargs):
+            self._abort = False
+            return func(self, *args, **kwargs)
+
+        return wrapper
+
+    def abort(self):
+        self._abort = True
+        self._status = ""
+
+    @reset_abort
+    def parse_response(self, response):
+        LOG.info("Parsing response...")
+        if response.status_code in {200, 201}:
+            LOG.info(f"Received response: {response.status_code} OK.")
+            return response.json()
+        elif response.status_code == 401:
+            LOG.error(
+                "Received response 401 ACCESS DENIED. User is not logged in to GitHub."
+            )
+            self.update_status("You are not authorized. Please login to GitHub.")
+            return None
+        else:
+            LOG.error(f"Task failed! Response code: {response.status_code}")
+            self.update_status("Task failed!")
+            return None
+
+    @reset_abort
+    def request_device_code(self):
+        LOG.info(
+            f"Requesting device code... | App: YimLaunchpad | Client ID: {CLIENT_ID} |"
+        )
+        url = "https://github.com/login/device/code"
+        headers = {"Accept": "application/json"}
+        data = {"client_id": CLIENT_ID}
+        response = requests.post(url, data=data, headers=headers)
+        return self.parse_response(response)
+
+    @reset_abort
+    def request_token(self, device_code):
+        LOG.info(
+            f"Requesting authorization token... | App: YimLaunchpad | Client ID: {CLIENT_ID} | Device Code: {device_code}"
+        )
+        url = "https://github.com/login/oauth/access_token"
+        headers = {"Accept": "application/json"}
+        data = {
+            "client_id": CLIENT_ID,
+            "device_code": device_code,
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        }
+        response = requests.post(url, data=data, headers=headers)
+        return self.parse_response(response)
+
+    @reset_abort
+    def poll_for_token(self, device_code, interval):
+        while not self._abort:
+            response = self.request_token(device_code)
+            if response is None:
+                LOG.error("Task failed: No response.")
+                return None
+
+            error = response.get("error")
+            access_token = response.get("access_token")
+
+            if error:
+                if error == "authorization_pending":
+                    sleep(interval)
+                    continue
+                elif error == "slow_down":
+                    LOG.debug(
+                        f"Too many requests. Increasing wait time to {interval + 5}"
+                    )
+                    sleep(interval + 5)
+                    continue
+                elif error == "expired_token":
+                    LOG.error("Device code expired.")
+                    self.update_status(
+                        "The device code has expired! Please login again."
+                    )
+                    sleep(1)
+                    return None
+                elif error == "access_denied":
+                    LOG.warning("Login canceled.")
+                    self.update_status("Login canceled.")
+                    sleep(1)
+                    return None
+                else:
+                    LOG.error(f"An error occured: {response}")
+                    self.update_status("Login failed!")
+                    sleep(1)
+                    return response
+            LOG.info("Authorization granted.")
+            return access_token
+
+    @reset_abort
+    def login(self):
+        global AUTH_TOKEN
+        device_code_data = self.request_device_code()
+        if not device_code_data:
+            return
+
+        verification_uri = device_code_data["verification_uri"]
+        user_code = device_code_data["user_code"]
+        device_code = device_code_data["device_code"]
+        interval = device_code_data["interval"]
+        self.update_status(
+            f"Please visit: {verification_uri} and enter this code: {user_code}"
+        )
+        access_token = self.poll_for_token(device_code, interval)
+
+        if access_token:
+            LOG.info("Authenticating user...")
+            store_token(access_token)
+            git = Github(access_token)
+            save_cfg_item(CONFIG_PATH, "git_logged_in", True)
+            save_cfg_item(CONFIG_PATH, "git_username", git.get_user().login)
+            AUTH_TOKEN = get_token()
+            self.update_status("Authentication successful")
+            LOG.info(
+                f"Successfully authenticated with GitHub as {git.get_user().login} ({git.get_user().name})"
+            )
+            sleep(2)
+
+    def logout(self):
+        delete_token()
+        save_cfg_item(CONFIG_PATH, "git_logged_in", False)
+        save_cfg_item(CONFIG_PATH, "git_username", "")
+        LOG.info("Logged out of GitHub.")
+        self.update_status(
+            "Logged out. To fully revoke access, visit https://github.com/settings/apps/authorizations."
+        )
+
+
+def stringFind(string: str, sub: str):
+    return string.lower().find(sub.lower()) != -1
+
+
+def stringContains(string: str, subs: dict):
+    return any(s.lower() in string.lower() for s in subs)
+
+
 def get_launchpad_version():
     try:
-        r = requests.get("https://github.com/xesdoog/YimLaunchpad/tags")
+        r = requests.get(f"{LAUNCHPAD_URL}/tags")
         soup = BeautifulSoup(r.content, "html.parser")
         result = soup.find(class_="Link--primary Link")
         s = str(result)
@@ -188,35 +420,6 @@ def is_file_saved(name, list):
     return False
 
 
-def read_cfg(file):
-    if os.path.exists(file):
-        with open(file, "r") as f:
-            return json.load(f)
-    else:
-        return None
-
-
-def read_cfg_item(file, item_name):
-    if os.path.exists(file):
-        with open(file, "r") as f:
-            return json.load(f)[item_name]
-    else:
-        return None
-
-
-def save_cfg(file, list):
-    open_mode = os.path.exists(file) and "w" or "x"
-    with open(file, open_mode) as f:
-        json.dump(list, f, indent=4)
-
-
-def save_cfg_item(file, item_name, value):
-    config = read_cfg(file)
-    with open(file, "w") as f:
-        config[item_name] = value
-        json.dump(config, f, indent=4)
-
-
 def get_rgl_path() -> str:
 
     regkey = winreg.OpenKey(
@@ -243,8 +446,33 @@ def open_folder(path):
     subprocess.Popen(f"explorer {os.path.abspath(path)}")
 
 
+def delete_item(path, on_fail=None, *args):
+    if not os.path.exists(path):
+        LOG.error(f"No such file or directory {path}")
+        if on_fail:
+            on_fail("No such file or directory!", [1.0, 0.0, 0.0])
+        return
+
+    try:
+        shutil.rmtree(path)
+    except WindowsError:
+        try:
+            os.chmod(path, 0o777)
+            shutil.rmtree(path)
+        except Exception:
+            LOG.error(f"Failed to delete {path}")
+            if on_fail:
+                on_fail(*args)
+
+
 def visit_url(url):
     webbrowser.open_new_tab(url)
+
+
+def is_repo_starred(repo_name, starred_list):
+    if len(starred_list) > 0:
+        return repo_name in starred_list
+    return False
 
 
 def is_repo_empty(repo, path=""):
@@ -271,9 +499,10 @@ def lua_script_needs_update(repo, installed) -> bool:
 
 
 def get_lua_repos():
-
+    user = None
     repos = []
     update_available = []
+    starred_repos = []
     installed = get_installed_scripts()
     exclude_repos = {
         "example",
@@ -283,22 +512,41 @@ def get_lua_repos():
         "yimlls",
     }
 
-    git = Github()
+    git = Github(AUTH_TOKEN)
     rate_limit, _ = git.rate_limiting
+
+    if AUTH_TOKEN:
+        user = git.get_user()
+
     try:
-        if rate_limit <= 0:
-            return [], [], True
+        if rate_limit == 0:
+            return [], [], [], True, 0
 
         YimMenu_Lua = git.get_organization("YimMenu-Lua")
         for repo in YimMenu_Lua.get_repos(sort="pushed", direction="desc"):
             if str(repo.name).lower() not in exclude_repos:
                 repos.append(repo)
-                if repo.name in installed and lua_script_needs_update(repo, installed):
-                    update_available.append(repo.name)
-        return repos, update_available, False
-
+                if repo.name in installed:
+                    if lua_script_needs_update(repo, installed):
+                        update_available.append(repo.name)
+                if user:
+                    if user.has_in_starred(repo):
+                        starred_repos.append(repo.name)
+        return repos, update_available, starred_repos, False, rate_limit
     except RateLimitExceededException:
-        return [], [], True
+        return [], [], [], True, 0
+
+
+def refresh_repository(repo):
+    git = Github(AUTH_TOKEN)
+    rate_limit, _ = git.rate_limiting
+    try:
+        if rate_limit == 0:
+            return repo, "Rate limit exceeded"
+        YimMenu_Lua = git.get_organization("YimMenu-Lua")
+        return YimMenu_Lua.get_repo(repo.name), f"Refreshing {repo.name}..."
+    except RateLimitExceededException:
+        return repo, "Rate limit exceeded"
 
 
 def get_installed_scripts():
@@ -379,3 +627,28 @@ def run_updater():
         f'wscript.exe "{vbs_file}" "{batch_file}"', shell=True, creationflags=8
     )
     sys.exit(0)
+
+
+def add_exclusion(paths: list):
+    exclusion_commands = "\n".join(
+        f"    Write-Host 'Adding '{path}'' -ForegroundColor Cyan;\nAdd-MpPreference -ExclusionPath '{path}';"
+        for path in paths
+    )
+    subprocess.call(
+        [
+            "powershell.exe",
+            "-noprofile",
+            "-c",
+            f"""
+        Start-Process -Verb RunAs -PassThru -Wait powershell.exe -Args "
+            -noprofile -NoExit -Command &{{
+                {exclusion_commands}
+                Write-Host 'Done.' -ForegroundColor Green;
+                Read-Host 'Press any key to exit'
+                exit
+            }}
+        "
+        """,
+        ],
+        shell=False,
+    )

@@ -5,14 +5,15 @@ if getattr(sys, "frozen", False):
 
 from pathlib import Path
 from win32gui import FindWindow, SetForegroundWindow
-from src import utils
+from src import utils, gui
 
-YLP_VERSION = "1.0.0.0"
+YLP_VERSION = "1.0.0.1"
 PARENT_PATH = Path(__file__).parent
 ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), "YimLaunchpad")
 UPDATE_PATH = os.path.join(LAUNCHPAD_PATH, "update")
 LOG = utils.LOGGER()
+ImGui = gui.imgui
 this_window = FindWindow(None, "YimLaunchpad")
 if this_window != 0:
     LOG.warning(
@@ -23,31 +24,29 @@ if this_window != 0:
 
 if not os.path.exists(LAUNCHPAD_PATH):
     os.mkdir(LAUNCHPAD_PATH)
-
 LOG.OnStart(LAUNCHPAD_PATH, YLP_VERSION)
 
 
 import atexit
-import imgui
 import io
 import psutil
 import requests
-import shutil
 import subprocess
 import zipfile
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timezone
 from imgui.integrations.glfw import GlfwRenderer
 from pyinjector import inject
-from src import gui
+from threading import Thread
 from time import sleep
-from win11toast import notify
+
 
 Icons = gui.Icons
 threadpool = ThreadPoolExecutor(max_workers=3)
 progress_value = 0
 process_id = 0
+git_requests_left = 0
+should_exit = False
 pending_update = False
 ylp_update_avail = False
 ylp_update_active = False
@@ -66,11 +65,15 @@ yim_down_thread = None
 file_add_thread = None
 lua_repos_thread = None
 lua_downl_thread = None
+busy_icon_thread = None
+git_login_thread = None
+defender_exclusions_thead = None
 status_updt_task = None
 task_status_col = None
 ylp_remote_ver = None
 task_status = ""
-LAUNCHPAD_URL = ""
+busy_icon = ""
+LAUNCHPAD_URL = "https://github.com/xesdoog/YimLaunchpad"
 NIGHTLY_URL = (
     "https://github.com/Mr-X-GTA/YimMenu/releases/download/nightly/YimMenu.dll"
 )
@@ -80,7 +83,10 @@ YIMDLL_FILE = os.path.join(YIMDLL_PATH, "YimMenu.dll")
 YIM_MENU_PATH = os.path.join(os.getenv("APPDATA"), "YimMenu")
 YIM_SCRIPTS_PATH = os.path.join(YIM_MENU_PATH, "scripts")
 YIM_SETTINGS = os.path.join(YIM_MENU_PATH, "settings.json")
+auto_exit = utils.read_cfg_item(CONFIG_PATH, "auto_exit_after_injection")
+GitOAuth = utils.GitHubOAuth()
 updatable_luas = []
+starred_luas = []
 dll_files = []
 repos = []
 ImRed = [1.0, 0.0, 0.0]
@@ -119,72 +125,17 @@ UIThemes = {
 default_cfg = {
     "theme": UIThemes["Dark"],
     "custom_dlls": False,
+    "auto_exit_after_injection": False,
     "auto_inject": False,
     "auto_inject_delay": 0,
+    "git_logged_in": False,
+    "git_username": "",
     "dll_files": [],
 }
 
 
 def res_path(path: str) -> Path:
     return ASSETS_PATH / Path(path)
-
-
-def set_cursor(window: object, cursor: object):
-    return gui.glfw.set_cursor(window, cursor)
-
-
-def set_window_size(window: object, width: int, height: int):
-    return gui.glfw.set_window_size(window, width, height)
-
-
-def colored_button(
-    label: str, color: list, hovered_color: list, active_color: list
-) -> bool:
-    imgui.push_style_color(imgui.COLOR_BUTTON, color[0], color[1], color[2])
-    imgui.push_style_color(
-        imgui.COLOR_BUTTON_ACTIVE, hovered_color[0], hovered_color[1], hovered_color[2]
-    )
-    imgui.push_style_color(
-        imgui.COLOR_BUTTON_HOVERED, active_color[0], active_color[1], active_color[2]
-    )
-    retbool = imgui.button(label)
-    imgui.pop_style_color(3)
-    return retbool
-
-
-def tooltip(text="", font=None, alpha=0.75):
-    if imgui.is_item_hovered():
-        imgui.push_style_var(imgui.STYLE_WINDOW_ROUNDING, 10)
-        imgui.set_next_window_bg_alpha(alpha)
-        with imgui.begin_tooltip():
-            imgui.push_text_wrap_pos(imgui.get_font_size() * 15)
-            if font:
-                with imgui.font(font):
-                    imgui.text(text)
-            else:
-                imgui.text(text)
-            imgui.pop_text_wrap_pos()
-        imgui.pop_style_var()
-
-
-def Toast(message="", callback=None):
-    return notify(
-        "YimLaunchpad",
-        message,
-        icon=str(res_path("img/ylp_icon.ico")),
-        on_click=callback,
-    )
-
-
-def stringFind(string: str, sub: str):
-    return string.lower().find(sub.lower()) != -1
-
-
-def status_text(text="", color=None):
-    if color:
-        imgui.text_colored(text, color[0], color[1], color[2], 1)
-    else:
-        imgui.text(text)
 
 
 def set_task_status(msg="", color=None, timeout=2):
@@ -196,12 +147,77 @@ def set_task_status(msg="", color=None, timeout=2):
     task_status_col = None
 
 
+def dummy_progress():
+    global progress_value
+
+    progress_value = 0
+
+    for i in range(101):
+        progress_value = i / 100
+        sleep(0.01)
+    sleep(1)
+    progress_value = 0
+
+
+def fetch_luas_progress():
+    global progress_value
+    global task_status_col
+    global lua_repos_thread
+
+    progress_value = 0
+
+    while lua_repos_thread and not lua_repos_thread.done() and task_status_col != ImRed:
+        progress_value = progress_value + 0.002
+        sleep(0.1)
+    if progress_value < 1:
+        progress_value = 1
+        sleep(0.5)
+    progress_value = 0
+
+
 def run_task_status_update(msg="", color=None, timeout=2):
     global status_updt_task
+
     if status_updt_task and not status_updt_task.done():
         pass
     else:
         status_updt_task = threadpool.submit(set_task_status, msg, color, timeout)
+
+
+def run_github_login():
+    global task_status, git_login_thread
+
+    if git_login_thread and not git_login_thread.done():
+        pass
+    else:
+        git_login_thread = threadpool.submit(GitOAuth.login)
+
+
+def add_to_defender_exclusions():
+    global task_status, task_status_col
+
+    exe_path = os.path.abspath(sys.argv[0])
+    try:
+        task_status_col = None
+        task_status = f"Executing Powershell to add exclusions..."
+        utils.add_exclusion([LAUNCHPAD_PATH, exe_path])
+    except Exception:
+        task_status_col = ImRed
+        task_status = f"Failed to add Windows Defender exlusions."
+        pass
+    task_status_col = None
+    task_status = "Done."
+    sleep(2)
+    task_status = ""
+
+
+def run_exclusion_thread():
+    global defender_exclusions_thead
+
+    if defender_exclusions_thead and not defender_exclusions_thead.done():
+        pass
+    else:
+        defender_exclusions_thead = threadpool.submit(add_to_defender_exclusions)
 
 
 def get_status_widget_color():
@@ -216,9 +232,13 @@ def get_status_widget_color():
     global file_add_thread
     global lua_repos_thread
     global lua_downl_thread
+    global git_login_thread
+    global defender_exclusions_thead
 
     if task_status != "":
-        if stringFind(task_status, "error") or stringFind(task_status, "failed"):
+        if utils.stringFind(task_status, "error") or utils.stringFind(
+            task_status, "failed"
+        ):
             return ImRed, "Error"
         else:
             for thread in (
@@ -232,10 +252,33 @@ def get_status_widget_color():
                 file_add_thread,
                 lua_repos_thread,
                 lua_downl_thread,
+                git_login_thread,
+                defender_exclusions_thead,
             ):
                 if thread and not thread.done():
                     return ImYellow, "Busy"
     return ImGreen, "Ready"
+
+
+def animate_icon():
+    global busy_icon
+
+    while True:
+        sleep(0.1)
+        col, text = get_status_widget_color()
+        if col == ImYellow and text == "Busy":
+            busy_icon = Icons.hourglass_1
+            sleep(0.1)
+            busy_icon = Icons.hourglass_2
+            sleep(0.1)
+            busy_icon = Icons.hourglass_3
+            sleep(0.1)
+            busy_icon = Icons.hourglass_4
+            sleep(0.1)
+            busy_icon = Icons.hourglass_5
+
+
+Thread(target=animate_icon, daemon=True).start()
 
 
 def check_for_ylp_update():
@@ -243,9 +286,11 @@ def check_for_ylp_update():
     global task_status_col
     global ylp_update_avail
     global ylp_remote_ver
+    global ylp_update_active
 
     task_status_col = None
     task_status = "Checking for Launchpad updates, please wait..."
+    ylp_update_active = True
     remote_version = utils.get_launchpad_version()
     LOG.info("Checking for Launchpad updates...")
     if remote_version is not None:
@@ -255,53 +300,53 @@ def check_for_ylp_update():
                 LOG.info("Update available!")
                 task_status_col = ImGreen
                 task_status = f"Update {remote_version} is available."
-                Toast(f"YimLaunchpad v{remote_version} is available.", run_ylp_update)
+                # gui.toast(
+                #     f"YimLaunchpad v{remote_version} is available.", run_ylp_update
+                # )
                 ylp_update_avail = True
             elif YLP_VERSION == remote_version:
-                LOG.info(f"No updates were found! {YLP_VERSION} is the latest version.")
+                LOG.info(
+                    f"No updates were found! v{YLP_VERSION} is the latest version."
+                )
                 task_status_col = None
                 task_status = (
-                    f"No updates were found! {YLP_VERSION} is the latest version."
+                    f"No updates were found! v{YLP_VERSION} is the latest version."
                 )
                 ylp_update_avail = False
-                sleep(3)
-                task_status = ""
             elif YLP_VERSION > remote_version:
                 ylp_update_avail = False
                 LOG.error(
                     f"Local YimLaunchpad version is {YLP_VERSION}. This is not a valid version! Are you a dev or a skid?"
                 )
                 task_status_col = ImRed
-                task_status = "Invalid version detected!\nPlease download YimLaunchpad from the official Github repository."
-                sleep(5)
-                task_status_col = None
-                task_status = ""
+                task_status = "Invalid version detected! Please download YimLaunchpad from the official Github repository."
         except Exception as e:
             task_status_col = ImRed
+            ylp_update_active = False
             task_status = "An error occured while attempting to check for updates. Check the log for more details."
             LOG.error(
                 f"An error occured! Traceback: function check_for_ylp_update() -> {e}"
             )
             ylp_update_avail = False
-            sleep(5)
-            task_status_col = None
-            task_status = ""
     else:
         task_status_col = ImRed
         task_status = (
             "Failed to get the latest GitHub version! Check the log for more details."
         )
-        sleep(5)
-        task_status_col = None
-        task_status = ""
+    sleep(3)
+    task_status_col = None
+    task_status = ""
+    ylp_update_active = False
 
 
 def check_for_yim_update():
     global task_status
     global yim_update_avail
     global task_status_col
+    global yim_update_active
 
     task_status = "Checking for YimMenu updates..."
+    yim_update_active = True
     remote_sha = utils.get_remote_checksum()
     local_sha = utils.calc_file_checksum(YIMDLL_FILE)
     if remote_sha is not None and local_sha is not None:
@@ -309,7 +354,7 @@ def check_for_yim_update():
             if local_sha != remote_sha:
                 LOG.info("Update available!")
                 task_status = "Update available."
-                Toast("A new update for YimMenu is available.", run_yim_download())
+                # gui.toast("A new update for YimMenu is available.", run_yim_download())
                 task_status_col = ImGreen
                 yim_update_avail = True
             else:
@@ -327,6 +372,7 @@ def check_for_yim_update():
         task_status = "Failed to check for updates! See the log for more details."
     sleep(3)
     task_status_col = None
+    yim_update_active = False
     task_status = ""
 
 
@@ -356,6 +402,14 @@ def yimlaunchapd_init():
     task_status_col = None
     task_status = "Checking for YimMenu updates..."
     check_for_yim_update()
+    task_status = "Verifying YimLaunchpad config..."
+    dummy_progress()
+    saved_config = utils.read_cfg(CONFIG_PATH)
+    if len(saved_config) != len(default_cfg):
+        for key in default_cfg:
+            if key not in saved_config:
+                saved_config.update({key: default_cfg[key]})
+                utils.save_cfg(CONFIG_PATH, saved_config)
     task_status_col = None
     task_status = ""
 
@@ -432,7 +486,7 @@ def download_update():
                 os.chmod(UPDATE_PATH, 0o777)
 
             with requests.get(
-                f"https://github.com/xesdoog/YimLaunchpad/releases/download/{ylp_remote_ver}/YimLaunchpad.exe",
+                f"{LAUNCHPAD_URL}/releases/download/{ylp_remote_ver}/YimLaunchpad.exe",
                 stream=True,
             ) as response:
                 response.raise_for_status()
@@ -450,7 +504,7 @@ def download_update():
                                 progress_value = int(current_size) / int(total_size)
                             else:
                                 LOG.warning("Update canceled by the user.")
-                                shutil.rmtree(UPDATE_PATH)
+                                utils.delete_item(UPDATE_PATH)
                         task_status = "Download complete."
                         for i in range(3):
                             task_status = f"Restarting in ({3 - i}) seconds"
@@ -468,7 +522,7 @@ def download_update():
             task_status_col = ImRed
             task_status = "An error occured! Check the log for more details"
             LOG.error(f"An error occured! Traceback: function download_update() -> {e}")
-            shutil.rmtree(UPDATE_PATH)
+            utils.delete_item(UPDATE_PATH)
             sleep(3)
 
     progress_value = 0
@@ -512,13 +566,17 @@ def run_ylp_update():
 def check_lua_repos():
     global repos
     global updatable_luas
+    global starred_luas
     global task_status
     global task_status_col
+    global git_requests_left
 
     try:
         task_status_col = None
         task_status = "Fetching repository information from YimMenu-Lua..."
-        repos, updatable_luas, is_exhausted = utils.get_lua_repos()
+        repos, updatable_luas, starred_luas, is_exhausted, git_requests_left = (
+            utils.get_lua_repos()
+        )
 
         if is_exhausted:
             task_status_col = ImRed
@@ -526,12 +584,12 @@ def check_lua_repos():
                 "GitHub API rate limit exceeded! Please try again in a few minutes."
             )
 
-        if len(updatable_luas) > 0:
-            Toast(
-                "Updates are available for some of your installed Lua scripts.",
-                15,
-                True,
-            )
+        # if len(updatable_luas) > 0:
+        #     gui.toast(
+        #         "Updates are available for some of your installed Lua scripts.",
+        #         15,
+        #         True,
+        #     )
 
     except Exception as e:
         task_status_col = ImRed
@@ -596,6 +654,8 @@ def inject_dll(dll, process_id):
     global task_status
     global task_status_col
     global game_is_running
+    global auto_exit
+    global should_exit
 
     task_status = "Starting injection..."
     try:
@@ -605,7 +665,8 @@ def inject_dll(dll, process_id):
                 task_status = f"Injecting {os.path.basename(dll)} into GTA5.exe..."
                 LOG.info(f"Injecting {dll} into GTA5.exe...")
                 LOG.debug(f"Injected library handle: {libHanlde}")
-                sleep(3)
+                dummy_progress()
+                sleep(1)
                 task_status = "Checking if the game is still running after injection..."
                 LOG.debug("Checking if the game is still running after injection...")
                 sleep(5)
@@ -614,6 +675,13 @@ def inject_dll(dll, process_id):
                     LOG.debug("Everything seems fine.")
                     sleep(3)
                     task_status = ""
+                    if auto_exit:
+                        for i in range(3):
+                            task_status = (
+                                f"YimLaunchpad will automatically exit in ({3 - i})"
+                            )
+                            sleep(1)
+                        should_exit = True
                 else:
                     LOG.warning("The game seems to have crashed after injection!")
                     task_status = "Uh Oh! Did your game crash?"
@@ -626,15 +694,14 @@ def inject_dll(dll, process_id):
             LOG.warning("Injection failed! Process not found.")
             task_status = "Process not found! Is the game running?"
             task_status_col = ImRed
-        sleep(5)
-        task_status = ""
-        task_status_col = None
     except Exception as e:
         LOG.critical(
             f"An exception has occured! Traceback: function inject_dll() -> {e}"
         )
         task_status = "Injection failed! Check the log for more details."
         task_status_col = ImRed
+
+    if not should_exit:
         sleep(5)
         task_status = ""
         task_status_col = None
@@ -699,7 +766,8 @@ def start_gta(idx: int):
                 "Attempting to launch GTA V though Epic Games Launcher, please wait..."
             )
             subprocess.run(
-                "cmd /c start com.epicgames.launcher://apps/9d2d0eb64d5c44529cece33fe2a46482?action=launch&silent=true"
+                "cmd /c start com.epicgames.launcher://apps/9d2d0eb64d5c44529cece33fe2a46482?action=launch&silent=true",
+                creationflags=0x8,
             )
         elif idx == 2:
             task_status = "Attempting to launch GTA V though Rockstar Games Launcher, please wait..."
@@ -716,7 +784,7 @@ def start_gta(idx: int):
                 task_status_col = ImRed
         elif idx == 3:
             task_status = "Attempting to launch GTA V though Steam, please wait..."
-            subprocess.run("cmd /c start steam://run/271590")
+            subprocess.run("cmd /c start steam://run/271590", creationflags=0x8)
         sleep(10)
         task_status = ""
         task_status_col = None
@@ -838,9 +906,12 @@ def OnDraw():
     global game_is_running
     global repos
     global updatable_luas
+    global auto_exit
 
     custom_dlls = utils.read_cfg_item(CONFIG_PATH, "custom_dlls")
     dll_files = utils.read_cfg_item(CONFIG_PATH, "dll_files") or []
+    git_logged_in = utils.read_cfg_item(CONFIG_PATH, "git_logged_in")
+    git_username = utils.read_cfg_item(CONFIG_PATH, "git_username")
     debug_settings = utils.read_cfg_item(YIM_SETTINGS, "debug")
     lua_settings = utils.read_cfg_item(YIM_SETTINGS, "lua")
     dll_index = 0
@@ -855,21 +926,22 @@ def OnDraw():
         or False
     )
     repos_checked = False
+    git_login_active = False
     selected_dll = []
     selected_repo = []
 
-    imgui.create_context()
-    window, _ = gui.new_window("YimLaunchpad", 400, 480, False)
+    ImGui.create_context()
+    window, _ = gui.new_window("YimLaunchpad", 400, 555, False)
     impl = GlfwRenderer(window)
     font_scaling_factor = gui.fb_to_window_factor(window)
-    io = imgui.get_io()
+    io = ImGui.get_io()
     io.fonts.clear()
     io.font_global_scale = 1.0 / font_scaling_factor
-    font_config = imgui.core.FontConfig(merge_mode=True)
-    icons_range = imgui.core.GlyphRanges(
+    font_config = ImGui.core.FontConfig(merge_mode=True)
+    icons_range = ImGui.core.GlyphRanges(
         [
-            0xF004,
             0xF005,
+            0xF007,
             0xF00C,
             0xF00D,
             0xF013,
@@ -892,16 +964,24 @@ def OnDraw():
             0xF0C8,
             0xF0E3,
             0xF0E4,
+            0xF0EA,
+            0xF0EB,
             0xF110,
             0xF111,
             0xF120,
             0xF121,
+            0xF128,
+            0xF129,
             0xF134,
             0xF135,
+            0xF14C,
+            0xF14D,
             0xF1C9,
             0xF1CA,
             0xF1F7,
             0xF1F8,
+            0xF250,
+            0xF254,
             0,
         ]
     )
@@ -930,51 +1010,52 @@ def OnDraw():
 
     impl.refresh_font_texture()
 
-    while not gui.glfw.window_should_close(window) and not pending_update:
+    while (
+        not gui.glfw.window_should_close(window)
+        and not pending_update
+        and not should_exit
+    ):
         gui.glfw.poll_events()
         impl.process_inputs()
-        imgui.new_frame()
+        ImGui.new_frame()
         win_w, win_h = gui.glfw.get_window_size(window)
-        imgui.set_next_window_size(win_w, win_h)
-        imgui.set_next_window_position(0, 0)
-        imgui.push_style_color(imgui.COLOR_FRAME_BACKGROUND, 0.1, 0.1, 0.1)
-        imgui.push_style_color(imgui.COLOR_FRAME_BACKGROUND_ACTIVE, 0.3, 0.3, 0.3)
-        imgui.push_style_color(imgui.COLOR_FRAME_BACKGROUND_HOVERED, 0.5, 0.5, 0.5)
-        imgui.push_style_color(imgui.COLOR_TAB, 0.097, 0.097, 0.097)
-        imgui.push_style_color(imgui.COLOR_TAB_ACTIVE, 0.075, 0.075, 0.075)
-        imgui.push_style_color(imgui.COLOR_TAB_HOVERED, 0.085, 0.085, 0.085)
-        imgui.push_style_color(imgui.COLOR_HEADER, 0.1, 0.1, 0.1)
-        imgui.push_style_color(imgui.COLOR_HEADER_ACTIVE, 0.3, 0.3, 0.3)
-        imgui.push_style_color(imgui.COLOR_HEADER_HOVERED, 0.5, 0.5, 0.5)
-        imgui.push_style_color(imgui.COLOR_BUTTON, 0.075, 0.075, 0.075)
-        imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, 0.085, 0.085, 0.085)
-        imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED, 0.1, 0.1, 0.1)
-        imgui.push_style_var(imgui.STYLE_CHILD_ROUNDING, 5)
-        imgui.push_style_var(imgui.STYLE_FRAME_ROUNDING, 5)
-        imgui.push_style_var(imgui.STYLE_ITEM_SPACING, (5, 5))
-        imgui.push_style_var(imgui.STYLE_ITEM_INNER_SPACING, (5, 5))
-        imgui.push_style_var(imgui.STYLE_FRAME_PADDING, (5, 5))
-        imgui.push_font(main_font)
-        imgui.begin(
+        ImGui.set_next_window_size(win_w, win_h)
+        ImGui.set_next_window_position(0, 0)
+        ImGui.push_style_color(ImGui.COLOR_FRAME_BACKGROUND, 0.1, 0.1, 0.1)
+        ImGui.push_style_color(ImGui.COLOR_FRAME_BACKGROUND_ACTIVE, 0.3, 0.3, 0.3)
+        ImGui.push_style_color(ImGui.COLOR_FRAME_BACKGROUND_HOVERED, 0.5, 0.5, 0.5)
+        ImGui.push_style_color(ImGui.COLOR_TAB, 0.097, 0.097, 0.097)
+        ImGui.push_style_color(ImGui.COLOR_TAB_ACTIVE, 0.075, 0.075, 0.075)
+        ImGui.push_style_color(ImGui.COLOR_TAB_HOVERED, 0.085, 0.085, 0.085)
+        ImGui.push_style_color(ImGui.COLOR_HEADER, 0.1, 0.1, 0.1)
+        ImGui.push_style_color(ImGui.COLOR_HEADER_ACTIVE, 0.3, 0.3, 0.3)
+        ImGui.push_style_color(ImGui.COLOR_HEADER_HOVERED, 0.5, 0.5, 0.5)
+        ImGui.push_style_color(ImGui.COLOR_BUTTON, 0.075, 0.075, 0.075)
+        ImGui.push_style_color(ImGui.COLOR_BUTTON_ACTIVE, 0.085, 0.085, 0.085)
+        ImGui.push_style_color(ImGui.COLOR_BUTTON_HOVERED, 0.1, 0.1, 0.1)
+        ImGui.push_style_var(ImGui.STYLE_CHILD_ROUNDING, 5)
+        ImGui.push_style_var(ImGui.STYLE_FRAME_ROUNDING, 5)
+        ImGui.push_style_var(ImGui.STYLE_ITEM_SPACING, (5, 5))
+        ImGui.push_style_var(ImGui.STYLE_ITEM_INNER_SPACING, (5, 5))
+        ImGui.push_style_var(ImGui.STYLE_FRAME_PADDING, (5, 5))
+        ImGui.push_font(main_font)
+        ImGui.begin(
             "Main Window",
-            flags=imgui.WINDOW_NO_TITLE_BAR
-            | imgui.WINDOW_NO_RESIZE
-            | imgui.WINDOW_NO_MOVE,
+            flags=ImGui.WINDOW_NO_TITLE_BAR
+            | ImGui.WINDOW_NO_RESIZE
+            | ImGui.WINDOW_NO_MOVE,
         )
-        with imgui.begin_child("##YLP", 0, 420):
+        with ImGui.begin_child("##YLP", 0, 460):
             if ylp_init_thread and ylp_init_thread.done():
-                if imgui.begin_tab_bar("ylp"):
-                    if imgui.begin_tab_item(
+                if ImGui.begin_tab_bar("ylp"):
+                    if ImGui.begin_tab_item(
                         f" {Icons.Dashboard}  Dashboard  "
                     ).selected:
                         run_background_thread()
-                        with imgui.begin_child("##yimmenu", border=True):
-                            with imgui.font(title_font):
-                                text_size = imgui.calc_text_size("- YimMenu -").x
-                                imgui.dummy(win_w / 2 - text_size / 1.6, 1)
-                                imgui.same_line()
-                                imgui.text("- YimMenu -")
-                            imgui.dummy(1, 10)
+                        with ImGui.begin_child("##yimmenu", border=True):
+                            with ImGui.font(title_font):
+                                gui.separator_text("YimMenu")
+                            ImGui.dummy(1, 10)
                             if not yim_update_active:
                                 if os.path.isfile(YIMDLL_FILE):
                                     yim_update_btn_label = (
@@ -987,35 +1068,32 @@ def OnDraw():
                                         if not yim_update_avail
                                         else run_yim_download
                                     )
-                                    if imgui.button(yim_update_btn_label):
+                                    if ImGui.button(yim_update_btn_label):
                                         yim_update_btn_callback()
                                 else:
-                                    if imgui.button(
+                                    if ImGui.button(
                                         f"{Icons.Download}  Download YimMenu"
                                     ):
                                         run_yim_download()
                             else:
-                                colored_button(
-                                    f"{Icons.Spinner}  Please wait",
-                                    [0.501, 0.501, 0.501],
-                                    [0.501, 0.501, 0.501],
-                                    [0.501, 0.501, 0.501],
-                                )
-                            imgui.dummy(1, 5)
-                            with imgui.font(small_font):
-                                imgui.bullet_text("Game Status:")
-                                imgui.same_line()
+                                gui.busy_button(busy_icon, "Please Wait")
+                            ImGui.dummy(1, 5)
+                            with ImGui.font(title_font):
+                                gui.separator_text("GTA V")
+                            with ImGui.font(small_font):
+                                ImGui.bullet_text("Game Status:")
+                                ImGui.same_line()
                             if game_is_running:
-                                with imgui.font(small_font):
-                                    imgui.text_colored("Running.", 0, 1, 0, 0.88)
-                                imgui.dummy(1, 5)
-                                if imgui.button(f"{Icons.Rocket}  Inject YimMenu"):
+                                with ImGui.font(small_font):
+                                    ImGui.text_colored("Running.", 0, 1, 0, 0.88)
+                                ImGui.dummy(1, 5)
+                                if ImGui.button(f"{Icons.Rocket}  Inject YimMenu"):
                                     run_inject_thread(YIMDLL_FILE, process_id)
-                                imgui.same_line()
-                                dc_clicked, disable_console = imgui.checkbox(
+                                ImGui.same_line()
+                                dc_clicked, disable_console = ImGui.checkbox(
                                     "Disable Console", disable_console
                                 )
-                                tooltip(
+                                gui.tooltip(
                                     "If you want to hide/show YimMenu's debug console, do it before injecting."
                                 )
                                 if dc_clicked:
@@ -1026,21 +1104,19 @@ def OnDraw():
                                         YIM_SETTINGS, "debug", debug_settings
                                     )
                             else:
-                                with imgui.font(small_font):
-                                    imgui.text_colored("Not running.", 1, 0, 0, 0.88)
-                                imgui.dummy(1, 5)
-                                imgui.set_next_item_width(200)
-                                _, launcher_index = imgui.combo(
+                                with ImGui.font(small_font):
+                                    ImGui.text_colored("Not running.", 1, 0, 0, 0.88)
+                                ImGui.dummy(1, 5)
+                                ImGui.set_next_item_width(200)
+                                _, launcher_index = ImGui.combo(
                                     "##launchers", launcher_index, LAUNCHERS
                                 )
-                                imgui.same_line()
-                                if imgui.button(f" {Icons.Play}  Run "):
+                                ImGui.same_line()
+                                if ImGui.button(f" {Icons.Play}  Run "):
                                     run_launch_thread(launcher_index)
 
-                            imgui.dummy(1, 5)
-                            imgui.separator()
-                            imgui.dummy(1, 5)
-                            cdll_clicked, custom_dlls = imgui.checkbox(
+                            ImGui.dummy(1, 5)
+                            cdll_clicked, custom_dlls = ImGui.checkbox(
                                 "Enable Custom DLLs", custom_dlls
                             )
                             if cdll_clicked:
@@ -1048,74 +1124,84 @@ def OnDraw():
                                     CONFIG_PATH, "custom_dlls", custom_dlls
                                 )
                             if custom_dlls:
-                                with imgui.begin_child("##dll_list", 330, 150, True):
-                                    imgui.text(f"{Icons.List}  Custom DLLs")
-                                    imgui.separator()
+                                with ImGui.begin_child("##dll_list", 330, 160, True):
+                                    ImGui.text(f"{Icons.List}  DLL List:")
+                                    ImGui.separator()
                                     if len(dll_files) > 0:
                                         for i in range(len(dll_files)):
                                             file_selected = dll_index == i
-                                            clicked, file_selected = imgui.selectable(
+                                            clicked, file_selected = ImGui.selectable(
                                                 dll_files[i]["name"],
                                                 file_selected,
                                                 0,
                                                 0,
                                             )
-                                            if imgui.is_item_hovered():
-                                                rect_x, _ = imgui.get_item_rect_size()
+                                            if ImGui.is_item_hovered():
+                                                rect_x, _ = ImGui.get_item_rect_size()
                                                 if rect_x > 330:
-                                                    tooltip(dll_files[i]["name"])
-                                                if imgui.is_mouse_double_clicked():
+                                                    gui.tooltip(dll_files[i]["name"])
+                                                if ImGui.is_mouse_double_clicked():
                                                     utils.open_folder(
                                                         dll_files[i]["path"]
                                                     )
                                             if clicked:
                                                 dll_index = i
-                                                imgui.set_item_default_focus()
+                                                ImGui.set_item_default_focus()
                                         selected_dll = dll_files[dll_index]
-                                imgui.same_line(spacing=10)
-                                with imgui.begin_child("##buttons"):
-                                    imgui.dummy(1, 20)
-                                    if imgui.button(Icons.Plus):
+                                ImGui.same_line(spacing=10)
+                                with ImGui.begin_child("##buttons"):
+                                    ImGui.dummy(1, 20)
+                                    if ImGui.button(Icons.Plus):
                                         file_path = gui.start_file_dialog(
                                             "DLL\0*.dll;\0", False
                                         )
                                         if file_path is not None:
                                             run_file_add_thread(file_path)
-                                    tooltip("Add custom DLL.")
+                                    gui.tooltip("Add custom DLL.")
                                     if len(dll_files) > 0:
-                                        if imgui.button(Icons.Minus):
+                                        if ImGui.button(Icons.Minus):
                                             dll_files.remove(selected_dll)
                                             utils.save_cfg_item(
                                                 CONFIG_PATH, "dll_files", dll_files
                                             )
                                             if dll_index > 0:
                                                 dll_index -= 1
-                                        tooltip("Remove custom DLL.")
+                                        gui.tooltip("Remove custom DLL.")
                                     if game_is_running:
-                                        if imgui.button(Icons.Rocket):
+                                        if ImGui.button(Icons.Rocket):
                                             run_inject_thread(
                                                 selected_dll["path"], process_id
                                             )
-                                        tooltip("Inject custom DLL into GTA5.exe")
-                        imgui.end_tab_item()
+                                        gui.tooltip("Inject custom DLL into GTA5.exe")
+                        ImGui.end_tab_item()
 
-                    if imgui.begin_tab_item(f"  {Icons.Code}  Lua Scripts  ").selected:
-                        if len(repos) == 0 and not repos_checked:
+                    if ImGui.begin_tab_item(f"  {Icons.Code}  Lua Scripts  ").selected:
+                        git_logged_in = utils.read_cfg_item(
+                            CONFIG_PATH, "git_logged_in"
+                        )
+                        git_username = utils.read_cfg_item(CONFIG_PATH, "git_username")
+                        if not repos_checked:
                             run_lua_repos_check()
+                            Thread(target=fetch_luas_progress, daemon=True).start()
                             repos_checked = True
-                        with imgui.begin_child("##Lua", border=True):
+                        with ImGui.begin_child("##Lua", border=True):
                             if lua_repos_thread and lua_repos_thread.done():
-                                if imgui.button(f"{Icons.Refresh}  Refresh List"):
+                                if ImGui.button(f"{Icons.Refresh}  Refresh List"):
                                     run_lua_repos_check()
-                            else:
-                                colored_button(
-                                    f"{Icons.Spinner}  Please wait",
-                                    [0.501, 0.501, 0.501],
-                                    [0.501, 0.501, 0.501],
-                                    [0.501, 0.501, 0.501],
+                                    Thread(
+                                        target=fetch_luas_progress, daemon=True
+                                    ).start()
+                                gui.tooltip(
+                                    f"Please do not spam this. You currently have {git_requests_left} request left."
                                 )
-                            imgui.same_line()
-                            lar_clicked, lua_auto_reload = imgui.checkbox(
+                                ImGui.same_line(spacing=10)
+                                ImGui.bullet_text(
+                                    f"API Requests Left: [{git_requests_left}]"
+                                )
+                            else:
+                                gui.busy_button(busy_icon, "Please Wait")
+
+                            lar_clicked, lua_auto_reload = ImGui.checkbox(
                                 "Auto-Reload Lua Scripts", lua_auto_reload
                             )
                             if lar_clicked:
@@ -1123,29 +1209,34 @@ def OnDraw():
                                     lua_auto_reload
                                 )
                                 utils.save_cfg_item(YIM_SETTINGS, "lua", lua_settings)
-                            imgui.dummy(1, 10)
-                            imgui.text(f"{Icons.GitHub}  Lua Repositories")
-                            imgui.separator()
-                            with imgui.begin_child("##repos", 0, 235):
-                                if len(repos) > 0:
+
+                            if (
+                                lua_repos_thread
+                                and lua_repos_thread.done()
+                                and len(repos) > 0
+                            ):
+                                ImGui.dummy(1, 10)
+                                ImGui.text(f"{Icons.GitHub}  Lua Repositories")
+                                ImGui.separator()
+                                with ImGui.begin_child("##repos", 0, 235):
                                     for i in range(len(repos)):
                                         repo_selected = repo_index == i
-                                        clicked, repo_selected = imgui.selectable(
+                                        clicked, repo_selected = ImGui.selectable(
                                             repos[i].name, repo_selected, 0, 0
                                         )
                                         if (
-                                            imgui.is_item_hovered()
-                                            and imgui.is_mouse_double_clicked()
+                                            ImGui.is_item_hovered()
+                                            and ImGui.is_mouse_double_clicked()
                                         ):
                                             utils.visit_url(repos[i].html_url)
                                         if clicked:
                                             repo_index = i
-                                            imgui.set_item_default_focus()
-                                        item_width = imgui.calc_text_size(
+                                            ImGui.set_item_default_focus()
+                                        item_width = ImGui.calc_text_size(
                                             repos[i].name
                                         ).x
-                                        imgui.same_line(spacing=400 - item_width - 135)
-                                        imgui.text_colored(
+                                        ImGui.same_line(spacing=400 - item_width - 135)
+                                        ImGui.text_colored(
                                             Icons.Down,
                                             0.0,
                                             0.588,
@@ -1158,47 +1249,51 @@ def OnDraw():
                                                 else 0.0
                                             ),
                                         )
-                                        imgui.same_line(spacing=20)
-                                        imgui.text_colored(Icons.Star, 1, 1, 0, 0.7)
-                                        imgui.same_line()
-                                        with imgui.font(small_font):
-                                            imgui.text(str(repos[i].stargazers_count))
+                                        ImGui.same_line(spacing=20)
+                                        if utils.is_repo_starred(
+                                            repos[i].name, starred_luas
+                                        ):
+                                            ImGui.text_colored(Icons.Star, 1, 1, 0, 0.7)
+                                        else:
+                                            ImGui.text(Icons.Star_2)
+                                        ImGui.same_line()
+                                        with ImGui.font(small_font):
+                                            ImGui.text(str(repos[i].stargazers_count))
                                     selected_repo = repos[repo_index]
-                            imgui.separator()
-                            imgui.dummy(1, 5)
-                            if len(repos) > 0:
+                                ImGui.separator()
+                                ImGui.dummy(1, 5)
                                 if not utils.is_script_installed(
                                     selected_repo
                                 ) and not utils.is_script_disabled(selected_repo):
-                                    if imgui.button(f"{Icons.Download} Download"):
+                                    if ImGui.button(f"{Icons.Download} Download"):
                                         run_lua_download(selected_repo)
-                                    imgui.same_line()
+                                    ImGui.same_line()
                                 else:
                                     if lua_script_has_update(
                                         selected_repo.name, updatable_luas
                                     ) and not utils.is_script_disabled(selected_repo):
-                                        if imgui.button(f"{Icons.Down} Update"):
+                                        if ImGui.button(f"{Icons.Down} Update"):
                                             run_lua_download(selected_repo)
-                                        imgui.same_line()
-                                    if imgui.button(f"{Icons.Trash} Delete"):
-                                        repo_path = os.path.join(
+                                        ImGui.same_line()
+                                    if ImGui.button(f"{Icons.Trash} Delete"):
+                                        ImGui.open_popup(f"delete {selected_repo.name}")
+                                    gui.message_box(
+                                        f"delete {selected_repo.name}",
+                                        "Are you sure?",
+                                        title_font,
+                                        1,
+                                        utils.delete_item,
+                                        os.path.join(
                                             YIM_SCRIPTS_PATH, selected_repo.name
-                                        )
-                                        try:
-                                            shutil.rmtree(repo_path)
-                                        except OSError:
-                                            try:
-                                                os.chmod(repo_path, 0o777)
-                                                shutil.rmtree(repo_path)
-                                            except Exception:
-                                                run_task_status_update(
-                                                    "Access denied! Try running YimLaunchpad as admin.",
-                                                    ImRed,
-                                                    5,
-                                                )
-                                    imgui.same_line()
+                                        ),
+                                        run_task_status_update,
+                                        "Access denied! Try running YimLaunchpad as admin.",
+                                        ImRed,
+                                        5,
+                                    )
+                                    ImGui.same_line()
                                 if utils.is_script_installed(selected_repo):
-                                    if imgui.button(f"{Icons.Close} Disable"):
+                                    if ImGui.button(f"{Icons.Close} Disable"):
                                         try:
                                             old_path = os.path.join(
                                                 YIM_SCRIPTS_PATH, selected_repo.name
@@ -1216,9 +1311,9 @@ def OnDraw():
                                                 ImYellow,
                                                 3,
                                             )
-                                    imgui.same_line()
+                                    ImGui.same_line()
                                 if utils.is_script_disabled(selected_repo):
-                                    if imgui.button(f"{Icons.Checkmark} Enable"):
+                                    if ImGui.button(f"{Icons.Checkmark} Enable"):
                                         try:
                                             old_path = os.path.join(
                                                 os.path.join(
@@ -1236,10 +1331,12 @@ def OnDraw():
                                                 ImYellow,
                                                 3,
                                             )
-                        imgui.end_tab_item()
+                        ImGui.end_tab_item()
 
-                    if imgui.begin_tab_item(f"  {Icons.Gear}  Settings  ").selected:
-                        with imgui.begin_child("##settings", border=True):
+                    if ImGui.begin_tab_item(f"  {Icons.Gear}  Settings  ").selected:
+                        with ImGui.begin_child("##settings", border=True):
+                            ImGui.push_text_wrap_pos(win_w - 20)
+                            ImGui.dummy(1, 5)
                             ylp_update_btn_label = (
                                 f"{Icons.Refresh}  Check for Updates"
                                 if not ylp_update_avail
@@ -1250,51 +1347,195 @@ def OnDraw():
                                 if not ylp_update_avail
                                 else run_ylp_update
                             )
+
                             if not ylp_update_active:
-                                if imgui.button(ylp_update_btn_label):
+                                if ImGui.button(ylp_update_btn_label):
                                     ylp_update_btn_callback()
                             else:
-                                colored_button(
-                                    f"{Icons.Spinner}  Please wait",
-                                    [0.501, 0.501, 0.501],
-                                    [0.501, 0.501, 0.501],
-                                    [0.501, 0.501, 0.501],
-                                )
-                            if imgui.button(
+                                gui.busy_button(busy_icon, "Please Wait")
+
+                            ImGui.dummy(1, 5)
+                            if ImGui.button(
                                 f"{Icons.Folder}  Open YimLaunchpad Folder"
                             ):
                                 utils.open_folder(LAUNCHPAD_PATH)
-                        imgui.end_tab_item()
 
-                    imgui.end_tab_bar()
+                            ImGui.dummy(1, 5)
+                            if ImGui.button("Add YimLaunchpad To Exclusions"):
+                                run_exclusion_thread()
+                            gui.tooltip(
+                                "Uses Powershell to add YimLaunchpad.exe and YimLaunchpad's folder to Windows Defender exclusions.\n\nNOTE: If you're using third party anti-virus software, this will not work.",
+                                None,
+                                0.9,
+                            )
 
-        imgui.spacing()
-        with imgui.begin_child("##feedback"):
+                            ImGui.dummy(1, 5)
+                            autoexitclicked, auto_exit = ImGui.checkbox(
+                                "Auto-Exit After Injection", auto_exit
+                            )
+                            if autoexitclicked:
+                                utils.save_cfg_item(
+                                    CONFIG_PATH, "auto_exit_after_injection", auto_exit
+                                )
+                            ImGui.dummy(1, 10)
+                            gui.separator_text(f"{Icons.GitHub} GitHub")
+                            if not git_logged_in:
+                                if not git_login_active:
+                                    if ImGui.button("Login To GitHub"):
+                                        git_login_active = True
+                                        task_status = "Logging in to GitHub..."
+                                        run_github_login()
+                                    ImGui.same_line(spacing=10)
+                                    if ImGui.button(f"  {Icons.Info}  "):
+                                        ImGui.open_popup("git_more_info")
+                                    gui.tooltip("Click for more information")
+                                    gui.message_box(
+                                        "git_more_info",
+                                        gui.git_more_info_text,
+                                        small_font,
+                                        0,
+                                    )
+                                if git_login_thread and not git_login_thread.done():
+                                    gui.busy_button(busy_icon, "Logging in...")
+                                    ImGui.same_line(spacing=20)
+                                    if ImGui.button(f"{Icons.Close}  Abort"):
+                                        GitOAuth.abort()
+                                        task_status = ""
+                                        git_login_active = False
+                                    ImGui.dummy(1, 10)
+                                    auth_status = GitOAuth.get_status()
+                                    ImGui.text(auth_status)
+                                    if utils.stringFind((auth_status), "Please visit"):
+                                        auth_code = auth_status[-9:]
+                                        if ImGui.button(
+                                            f"{Icons.Clipboard} Copy Code & Open URL"
+                                        ):
+                                            ImGui.set_clipboard_text(auth_code)
+                                            utils.visit_url(
+                                                "https://github.com/login/device"
+                                            )
+                                        gui.tooltip(
+                                            "Press to copy the code and open the url in your browser"
+                                        )
+                                    if utils.stringFind(auth_status, "successful"):
+                                        git_username = utils.read_cfg_item(
+                                            CONFIG_PATH, "git_username"
+                                        )
+                                        git_logged_in = True
+                                        git_login_active = False
+                                        run_task_status_update(
+                                            "Sucessfully logged in to GitHub.",
+                                            ImGreen,
+                                            3,
+                                        )
+                                        if len(repos) > 0:
+                                            repos_checked = False
+                                    if utils.stringContains(
+                                        auth_status, {"expired", "canceled", "failed"}
+                                    ):
+                                        run_task_status_update(
+                                            auth_status,
+                                            ImRed,
+                                            3,
+                                        )
+                                        git_logged_in = False
+                                        git_login_active = False
+
+                            else:
+                                ImGui.text(f"{Icons.User} Logged in as: {git_username}")
+                                ImGui.dummy(1, 5)
+                                if ImGui.button(f"{Icons.Close} Logout"):
+                                    GitOAuth.logout()
+                                    run_task_status_update(
+                                        "Disconnected from GitHub", None, 3
+                                    )
+                                    git_username = ""
+                                    git_logged_in = False
+                                    ImGui.open_popup("git_diconnect")
+                            gui.message_box(
+                                "git_diconnect",
+                                "You have logged out of GitHub on this app. To fully revoke access, visit https://github.com/settings/apps/authorizations.\n\nWould you like to go there now?",
+                                None,
+                                1,
+                                utils.visit_url,
+                                "https://github.com/settings/apps/authorizations",
+                            )
+
+                            ImGui.pop_text_wrap_pos()
+                        ImGui.end_tab_item()
+                    ImGui.end_tab_bar()
+
+        ImGui.spacing()
+        with ImGui.begin_child("##feedback", 0, 40):
             status_col, status = get_status_widget_color()
-            imgui.text_colored(
+            ImGui.text_colored(
                 Icons.Circle, status_col[0], status_col[1], status_col[2], 0.8
             )
-            tooltip(status, small_font)
-            imgui.push_text_wrap_pos(win_w - 15)
-            with imgui.font(small_font):
-                imgui.same_line()
-                status_text(task_status, task_status_col)
-            imgui.pop_text_wrap_pos()
+            gui.tooltip(status, small_font)
+            ImGui.push_text_wrap_pos(win_w - 15)
+            with ImGui.font(small_font):
+                ImGui.same_line()
+                gui.status_text(task_status, task_status_col)
+            ImGui.pop_text_wrap_pos()
             if progress_value > 0:
-                imgui.progress_bar(progress_value, (380, 5))
+                ImGui.progress_bar(progress_value, (380, 5))
 
-        imgui.pop_font()
-        imgui.pop_style_var(5)
-        imgui.pop_style_color(12)
-        imgui.end()
+        clickable_icon_size = ImGui.calc_text_size(Icons.GitHub)
+        padding = (win_w - clickable_icon_size.x) / 5
+        gui.clickable_icon(
+            Icons.GitHub,
+            small_font,
+            "Click to visit YimMenu's GitHub repository",
+            utils.visit_url,
+            "https://github.com/Mr-X-GTA/YimMenu",
+        )
+        ImGui.same_line(spacing=padding)
+        gui.clickable_icon(
+            Icons.Extern_Link,
+            small_font,
+            "Click to visit YimMenu's unknowncheast thread",
+            utils.visit_url,
+            "https://www.unknowncheats.me/forum/grand-theft-auto-v/476972-yimmenu-1-69-b3351.html",
+        )
+        ImGui.same_line(spacing=padding)
+        gui.clickable_icon(
+            Icons.GitHub,
+            small_font,
+            "Click to visit YimLaunchpad's GitHub repository",
+            utils.visit_url,
+            "https://github.com/xesdoog/YimLaunchpad",
+        )
+        ImGui.same_line(spacing=padding)
+        gui.clickable_icon(
+            Icons.Extern_Link,
+            small_font,
+            "Click to visit FSL's unknowncheast thread",
+            utils.visit_url,
+            "https://www.unknowncheats.me/forum/grand-theft-auto-v/616977-fsl-local-gtao-saves.html",
+        )
+        ImGui.same_line(spacing=padding)
+        gui.clickable_icon(
+            Icons.GitHub,
+            small_font,
+            "Click to visit the YimMenu-Lua GitHub organization",
+            utils.visit_url,
+            "https://github.com/YimMenu-Lua",
+        )
+
+        ImGui.pop_font()
+        ImGui.pop_style_var(5)
+        ImGui.pop_style_color(12)
+        ImGui.end()
 
         gui.gl.glClearColor(1.0, 1.0, 1.0, 1)
         gui.gl.glClear(gui.gl.GL_COLOR_BUFFER_BIT)
-        imgui.render()
-        impl.render(imgui.get_draw_data())
+        ImGui.render()
+        impl.render(ImGui.get_draw_data())
         gui.glfw.swap_buffers(window)
 
     if status_col != ImGreen:
+        if git_login_thread and not git_login_thread.done():
+            GitOAuth.abort()
         threadpool.shutdown()
     impl.shutdown()
     gui.glfw.terminate()
