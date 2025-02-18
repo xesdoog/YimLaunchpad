@@ -592,7 +592,7 @@ def is_script_disabled(repo):
 
 def run_updater():
 
-    main_file = os.path.join(os.getcwd(), "YimLaunchpad.exe")
+    main_file = os.path.join(executable_dir(), "YimLaunchpad.exe")
     vbs_file = os.path.join(UPDATE_PATH, "run_update.vbs")
     batch_file = os.path.join(UPDATE_PATH, "update.bat")
     temp_file = os.path.join(UPDATE_PATH, "YimLaunchpad.exe")
@@ -605,7 +605,7 @@ def run_updater():
 
     del "{main_file}"
     move "{temp_file}" "{main_file}"
-    cd /d "{os.path.abspath(os.getcwd())}"
+    cd /d "{executable_dir()}"
     start "" ./YimLaunchpad.exe
     rmdir /s /q "{UPDATE_PATH}"
     """
