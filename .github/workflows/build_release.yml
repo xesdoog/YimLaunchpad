@@ -128,7 +128,13 @@ jobs:
         run: |
             $commitMessage = git log -1 --pretty=format:"%s"
             $commitBody = git log -1 --pretty=format:"%b"
-            Write-Output "changelog_body=$commitMessage`n`n$commitBody" >> $env:GITHUB_OUTPUT
+            @"
+            changelog_body<<EOF
+            $commitMessage
+
+            $commitBody
+            EOF
+            "@ | Out-File -FilePath $env:GITHUB_OUTPUT -Append
         shell: pwsh
 
       - name: Install dependencies
