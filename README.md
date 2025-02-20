@@ -23,6 +23,7 @@ A launchpad for YimMenu.
 - Start the game.
 - Inject DLLs into the game's process.
 - Auto-Exit after injecting any DLL.
+- Checks modules loaded by the game to determine if YimMenu and FSL are loaded.
 
 ### Lua Scripts
 
@@ -43,9 +44,17 @@ A launchpad for YimMenu.
 - Open the launchpad's folder which is located in `%AppData%\YimLaunchpad`.
 - Add `YimLaunchpad.exe` and its parent folder to Windows Defender exclusions using Windows Powershell™.
 - Enable/disable `Auto-Exit`.
+- Enable/Disable YimLaunchpad's debug console.
 - Login/logout to/from GitHub.
 
 ###  
+
+###  
+
+## TODO
+
+[ ] Add themes.
+[ ] Add automatic injection *(if I can for the life of me figure out a signature for the landing page)*
 
 ## Showcase
 
