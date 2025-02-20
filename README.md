@@ -53,8 +53,9 @@ A launchpad for YimMenu.
 
 ## TODO
 
-[ ] Add themes.
-[ ] Add automatic injection *(if I can for the life of me figure out a signature for the landing page)*
+[] Add themes.
+
+[] Add automatic injection *(if I can for the life of me figure out a signature for the landing page)*
 
 ## Showcase
 
