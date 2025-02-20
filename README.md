@@ -51,7 +51,7 @@ A launchpad for YimMenu.
 
 ### Dashboard
 
-![dashboard](https://github.com/user-attachments/assets/c21d2142-7283-46dd-8968-1ff9c71d4e23)
+![dashboard_x3](https://github.com/user-attachments/assets/f4ed5ecf-3d10-40ad-b86d-85146d071ef3)
 
 ### Lua Scripts (Without GitHub Auth)
 

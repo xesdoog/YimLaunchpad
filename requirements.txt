@@ -1,14 +1,17 @@
 bs4
 glfw
 imgui
+keyring
 numpy
 opencv-python
 psutil
 pyinjector
 pillow
 PyGitHub
+pymem
 PyOpenGL
 PyOpenGL_accelerate
 pywin32
 requests
 requests_cache
+winsdk

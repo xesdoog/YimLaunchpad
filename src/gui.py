@@ -7,8 +7,11 @@ import imgui
 import numpy as np
 import OpenGL.GL as gl
 import os
-# from win11toast import notify
 import win32con
+
+from contextlib import contextmanager
+from win11toast import notify
+
 
 PARENT_PATH = Path(__file__).parent
 ASSETS_PATH = PARENT_PATH / Path(r"assets")
@@ -172,6 +175,41 @@ def busy_button(icon, label):
     )
 
 
+@contextmanager
+def begin_disabled(cond: bool):
+    """
+    PyImGui is missing a lot of useful ImGui bindings. This tries to mimic
+
+    ```
+    ImGui::BeginDisabled(arg)
+        ...
+    ImGui::EndDisabled()
+    ```
+    """
+    if cond:
+        imgui.push_style_var(imgui.STYLE_ALPHA, 0.5)
+        imgui.begin_group()
+    try:
+        yield
+    finally:
+        if cond:
+            imgui.end_group()
+            imgui.pop_style_var()
+
+
+def disabled_widget(cond: bool, callback, *args):
+    """
+    Wrapper to handle ImGui widgets that return multiple values (checkboxes, sliders, combos, etc...).
+    """
+    with begin_disabled(cond):
+        result = callback(*args)
+        if cond:
+            if isinstance(result, tuple):
+                return (False, result[1])
+            return False
+        return result
+
+
 def tooltip(text="", font=None, alpha=0.75):
     if imgui.is_item_hovered():
         imgui.push_style_var(imgui.STYLE_WINDOW_ROUNDING, 10)
@@ -187,20 +225,20 @@ def tooltip(text="", font=None, alpha=0.75):
         imgui.pop_style_var()
 
 
+def toast(message="", callback=None):
+    return notify(
+        "YimLaunchpad",
+        message,
+        icon=str(res_path("img/ylp_icon.ico")),
+        on_click=callback,
+    )
+
+
 def status_text(text="", color=None):
     if color:
         imgui.text_colored(text, color[0], color[1], color[2], 1)
     else:
         imgui.text(text)
-
-
-# def toast(message="", callback=None):
-#     return notify(
-#         "YimLaunchpad",
-#         message,
-#         icon=str(res_path("img/ylp_icon.ico")),
-#         on_click=callback,
-#     )
 
 
 def message_box(title, text="", font=None, context=0, on_true=None, *args):
@@ -271,6 +309,9 @@ def same_line_separator(width=0):
 
 
 def separator_text(text, padding=10):
+    """
+    PyImGui is missing a lot of useful ImGui bindings. This tries to mimic `ImGui::SeparatorText()`
+    """
     cursor_x, cursor_y = imgui.get_cursor_screen_pos()
     text_width, _ = imgui.calc_text_size(text)
     region_width = imgui.get_content_region_available()[0]

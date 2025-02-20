@@ -1,20 +1,36 @@
 import hashlib
+import inspect
 import json
+import keyring
 import logging
 import logging.handlers
 import os
 import platform
+import psutil
 import requests
 import shutil
 import subprocess
 import sys
 import webbrowser
-import win32cred
 import winreg
 
 from bs4 import BeautifulSoup
+from ctypes import (
+    Structure,
+    windll,
+    c_void_p,
+    byref,
+    create_string_buffer,
+    sizeof,
+    POINTER,
+)
+from ctypes import c_size_t as SIZE_T
+from ctypes.wintypes import HANDLE, LPVOID, DWORD
 from datetime import datetime, timezone
 from github import Github, RateLimitExceededException
+from pathlib import Path
+from pymem import Pymem
+from pymem.memory import virtual_query
 from requests_cache import DO_NOT_CACHE, install_cache
 from time import sleep
 
@@ -24,6 +40,8 @@ if not os.path.exists(LAUNCHPAD_PATH):
     os.mkdir(LAUNCHPAD_PATH)
 
 WORKDIR = os.path.abspath(os.getcwd())
+PARENT_PATH = Path(__file__).parent
+ASSETS_PATH = PARENT_PATH / Path(r"assets")
 UPDATE_PATH = os.path.join(LAUNCHPAD_PATH, "update")
 CONFIG_PATH = os.path.join(LAUNCHPAD_PATH, "settings.json")
 YIM_MENU_PATH = os.path.join(os.getenv("APPDATA"), "YimMenu")
@@ -33,6 +51,60 @@ LOG_BACKUP = os.path.join(LAUNCHPAD_PATH, "Log Backup")
 LAUNCHPAD_URL = "https://github.com/xesdoog/YimLaunchpad"
 CLIENT_ID = "Iv23lij2DMB5JgpS7rK7"
 AUTH_TOKEN = None
+USER_OS = platform.system()
+USER_OS_ARCH = platform.architecture()[0][:2]
+USER_OS_RELEASE = platform.release()
+USER_OS_VERSION = platform.version()
+# https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc
+MEM_COMMIT = 0x00001000
+# https://learn.microsoft.com/en-us/windows/win32/memory/memory-protection-constants
+PAGE_READWRITE = 0x04
+PAGE_NOACCESS = 0x01
+PAGE_GUARD = 0x100
+# https://learn.microsoft.com/en-us/windows/win32/procthread/process-security-and-access-rights
+PROCESS_VM_READ = 0x0010
+PROCESS_QUERY_INFORMATION = 0x0400
+
+
+def log_init_str(app_version: str):
+    return f"""
+--- YimLaunchpad ---
+
+    - Version: v{app_version}
+    - Operating System: {USER_OS} {USER_OS_RELEASE} x{USER_OS_ARCH} v{USER_OS_VERSION}
+    - Working Directory: {LAUNCHPAD_PATH}
+    - Executable Directory: {executable_dir()}
+
+
+"""
+
+
+kernel32 = windll.kernel32
+kernel32.ReadProcessMemory.argtypes = [
+    HANDLE,
+    LPVOID,
+    LPVOID,
+    DWORD,
+    POINTER(DWORD),
+]
+
+
+class MEMORY_BASIC_INFORMATION(Structure):
+    _fields_ = [
+        ("BaseAddress", LPVOID),
+        ("AllocationBase", LPVOID),
+        ("AllocationProtect", DWORD),
+        ("RegionSize", SIZE_T),
+        ("State", DWORD),
+        ("Protect", DWORD),
+        ("Type", DWORD),
+    ]
+
+
+mem_info = MEMORY_BASIC_INFORMATION()
+VirtualQueryEx = kernel32.VirtualQueryEx
+VirtualQueryEx.restype = SIZE_T
+VirtualQueryEx.argtypes = [HANDLE, LPVOID, POINTER(MEMORY_BASIC_INFORMATION), SIZE_T]
 
 install_cache(
     cache_name="yimlaunchpad_cache",
@@ -47,33 +119,12 @@ install_cache(
 )
 
 
+def res_path(path: str):
+    return ASSETS_PATH / Path(path)
+
+
 def executable_dir():
     return os.path.dirname(os.path.abspath(sys.argv[0]))
-
-
-def store_token(token):
-    credential = {
-        "Type": win32cred.CRED_TYPE_GENERIC,
-        "TargetName": "GIT_AUTH_TOKEN",
-        "CredentialBlob": token,
-        "Persist": win32cred.CRED_PERSIST_LOCAL_MACHINE
-    }
-    win32cred.CredWrite(credential, 0)
-
-
-def get_token():
-    try:
-        cred = win32cred.CredRead("GIT_AUTH_TOKEN", win32cred.CRED_TYPE_GENERIC)
-        return cred["CredentialBlob"].decode("utf-16")
-    except:
-        return None
-
-
-def delete_token():
-    try:
-        win32cred.CredDelete("GIT_AUTH_TOKEN", win32cred.CRED_TYPE_GENERIC)
-    except Exception as e:
-        LOG.error(f"Failed to delete GitHub token: {e}")
 
 
 def read_cfg(file):
@@ -110,23 +161,20 @@ def save_cfg_item(file, item_name, value):
         f.close()
 
 
-if read_cfg_item(CONFIG_PATH, "git_logged_in"):
-    AUTH_TOKEN = get_token()
-
-
 class CustomLogHandler(logging.FileHandler):
-
     def __init__(
         self,
         filename,
         archive_path=LOG_BACKUP,
         archive_name="backup_%Y%m%d_%H%M%S.log",
         max_bytes=524288,
+        encoding="utf-8",
         **kwargs,
     ):
         self.archive_path = archive_path
         self.archive_name = archive_name
         self.max_bytes = max_bytes
+        self.encoding = encoding
 
         self._archive_log(filename)
         super().__init__(filename, **kwargs)
@@ -143,18 +191,56 @@ class CustomLogHandler(logging.FileHandler):
         self._archive_log(self.baseFilename)
 
 
-class LOGGER:
+class CustomLogFilter(logging.Filter):
+    def filter(self, record):
+        record.caller_name = inspect.stack()[6].function
+        return True
 
-    def __init__(self):
+
+class LOGGER:
+    def __init__(self, app_version=""):
+        self.app_version = app_version
         self.logger = logging.getLogger("YLP")
-        log_handler = CustomLogHandler(LOG_FILE)
+        self.logger.addFilter(CustomLogFilter())
+        self.logger.setLevel(logging.INFO)
+        self.formatter = logging.Formatter(
+            fmt="[%(asctime)s] [%(levelname)s] (%(caller_name)s): %(message)s",
+            datefmt="%H:%M:%S",
+        )
+        self.file_handler = CustomLogHandler(LOG_FILE)
+        self.file_handler.setLevel(logging.INFO)
+        self.file_handler.setFormatter(self.formatter)
+        self.console_handler = None
         logging.basicConfig(
             encoding="utf-8",
             level=logging.INFO,
-            format="[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
+            format="[%(asctime)s] [%(levelname)s] (%(caller_name)s): %(message)s",
             datefmt="%H:%M:%S",
-            handlers=[log_handler],
+            handlers=[self.file_handler],
         )
+
+    def show_console(self):
+        if not kernel32.GetConsoleWindow():
+            kernel32.AllocConsole()
+            sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+            sys.stderr = open("CONOUT$", "w", encoding="utf-8")
+            kernel32.SetConsoleTitleW("YimLaunchpad")
+        if not self.console_handler:
+            self.console_handler = logging.StreamHandler(sys.stdout)
+            self.console_handler.setLevel(logging.INFO)
+            self.console_handler.setFormatter(self.formatter)
+            self.logger.addHandler(self.console_handler)
+            print(log_init_str(self.app_version))
+
+    def hide_console(self):
+        if kernel32.GetConsoleWindow():
+            kernel32.FreeConsole()
+            sys.stdout = sys.__stdout__
+            sys.stderr = sys.__stderr__
+
+        if self.console_handler:
+            self.logger.removeHandler(self.console_handler)
+            self.console_handler = None
 
     def debug(self, msg: str):
         self.logger.debug(msg)
@@ -171,26 +257,37 @@ class LOGGER:
     def critical(self, msg: str):
         self.logger.critical(msg)
 
-    def OnStart(self, parent_path, version):
-        userOS = platform.system()
-        userOSarch = platform.architecture()
-        userOSrel = platform.release()
-        userOSver = platform.version()
-        workDir = parent_path
-        exeDir = executable_dir()
-        logfile = open(LOG_FILE, "a")
-        logfile.write("\n--- YimLaunchpad ---\n\n")
-        logfile.write(f"    ¤ Version: {version}\n")
-        logfile.write(
-            f"    ¤ Operating System: {userOS} {userOSrel} x{userOSarch[0][:2]} v{userOSver}\n"
-        )
-        logfile.write(f"    ¤ Working Directory: {workDir}\n")
-        logfile.write(f"    ¤ Executable Directory: {exeDir}\n\n\n")
-        logfile.flush()
-        logfile.close()
+    def on_init(self):
+        with open(LOG_FILE, "a") as f:
+            f.write(log_init_str(self.app_version))
+            f.flush()
+            f.close()
 
 
 LOG = LOGGER()
+
+
+def store_token(token):
+    keyring.set_password("YLPGIT", "YimLaunchpad", token)
+
+
+def get_token():
+    try:
+        return keyring.get_password("YLPGIT", "YimLaunchpad")
+    except Exception as e:
+        LOG.error(f"Failed to read GitHub token: {e}")
+        return None
+
+
+def delete_token():
+    try:
+        keyring.delete_password("YLPGIT", "YimLaunchpad")
+    except Exception as e:
+        LOG.error(f"Failed to delete GitHub token: {e}")
+
+
+if read_cfg_item(CONFIG_PATH, "git_logged_in"):
+    AUTH_TOKEN = get_token()
 
 
 class GitHubOAuth:
@@ -329,11 +426,11 @@ class GitHubOAuth:
             save_cfg_item(CONFIG_PATH, "git_logged_in", True)
             save_cfg_item(CONFIG_PATH, "git_username", git.get_user().login)
             AUTH_TOKEN = get_token()
-            self.update_status("Authentication successful")
             LOG.info(
                 f"Successfully authenticated with GitHub as {git.get_user().login} ({git.get_user().name})"
             )
-            sleep(2)
+            self.update_status("Authentication successful")
+            sleep(3)
 
     def logout(self):
         delete_token()
@@ -343,6 +440,136 @@ class GitHubOAuth:
         self.update_status(
             "Logged out. To fully revoke access, visit https://github.com/settings/apps/authorizations."
         )
+
+
+class MemoryScanner:
+    def __init__(
+        self,
+        process_name=None,
+    ):
+        self.process_name = process_name
+        self.pid = self.get_process_id()
+        self.process_handle = self.get_process_handle()
+
+    def find_process(self, process_name, timeout=0.001):
+        self.process_name = process_name
+        self.pid = self.get_process_id(timeout)
+        self.process_handle = self.get_process_handle()
+
+    def is_process_running(self):
+        return self.pid not in (None, 0)
+
+    def get_process_id(self, timeout=0.001):
+        for p in psutil.process_iter(["name", "exe", "cmdline"]):
+            sleep(timeout)
+            if (
+                self.process_name == p.info["name"]
+                or p.info["exe"]
+                and os.path.basename(p.info["exe"]) == self.process_name
+                or p.info["cmdline"]
+                and p.info["cmdline"][0] == self.process_name
+            ):
+                return p.pid
+        return None
+
+    def get_process_modules(self):
+        loaded_modules = {}
+        try:
+            process = psutil.Process(self.pid)
+            for module in process.memory_maps():
+                if module.path and module.path.endswith(".dll"):
+                    loaded_modules[os.path.basename(module.path).lower()] = module.path
+        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+            LOG.error(f"Error accessing process {self.pid}: {e}")
+            return {}
+
+        return loaded_modules
+
+    def is_module_loaded(self, module_name: str):
+        if self.pid and module_name.endswith(".dll"):
+            return module_name.lower() in self.get_process_modules()
+        return False
+
+    def get_base_address(self):
+        if self.pid:
+            return Pymem(self.pid).base_address
+
+    def get_process_handle(self):
+        if self.pid:
+            return kernel32.OpenProcess(
+                PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, False, self.pid
+            )
+
+    def is_address_valid(self, address):
+        if self.process_handle:
+            try:
+                mem_info = virtual_query(self.process_handle, address)
+                if mem_info.Protect & PAGE_READWRITE:
+                    return True
+                else:
+                    LOG.warning(
+                        f"[SCANNER] Memory at {hex(address)} is protected: {mem_info.Protect}"
+                    )
+                    return False
+            except:
+                return False
+        return False
+
+    def is_memory_readable(self, address):
+        if self.process_handle and self.is_address_valid(address):
+            mem_info = MEMORY_BASIC_INFORMATION()
+            result = VirtualQueryEx(
+                self.process_handle, address, byref(mem_info), sizeof(mem_info)
+            )
+
+            if result == 0:
+                LOG.error(f"[SCANNER] VirtualQueryEx failed for address {hex(address)}")
+                return False
+
+            LOG.debug(
+                f"[SCANNER] Memory Region: Base={hex(mem_info.BaseAddress)}, State={mem_info.State}, Protect={mem_info.Protect}"
+            )
+            return mem_info.State == MEM_COMMIT and mem_info.Protect not in (
+                PAGE_NOACCESS,
+                PAGE_GUARD,
+            )
+        return False
+
+    def read_process_memory(self, address, size):
+        if self.is_address_valid(address) and self.is_memory_readable(address):
+            buffer = create_string_buffer(size)
+            bytes_read = DWORD(0)
+            kernel32.ReadProcessMemory(
+                self.process_handle, c_void_p(address), buffer, size, byref(bytes_read)
+            )
+            return buffer.raw
+
+    def memory_compare(self, memory, pattern: str, mask: str):
+        for i in range(len(pattern)):
+            if mask[i] == "x" and memory[i] != pattern[i]:
+                return False
+        return True
+
+    def find_pattern(self, pattern: str, mask: str, chunk_size=1024):
+        if not self.process_handle:
+            return 0
+
+        found_address = 0
+        base_address = self.get_base_address()
+        while True:
+            memory = self.read_process_memory(
+                self.process_handle, base_address, chunk_size
+            )
+            baseAddr = self.get_base_address()
+            for i in range(len(memory) - len(pattern) + 1):
+                if self.memory_compare(memory[i:], pattern, mask):
+                    found_address = baseAddr + i
+                    return found_address
+            baseAddr += chunk_size
+            # print(f"scanning {hex(baseAddr + chunk_size)}")
+            if baseAddr > 0x7FFFFFFFFFFF:
+                LOG.warning("[SCANNER] Memory limit reached!")
+                return 0
 
 
 def stringFind(string: str, sub: str):
@@ -421,7 +648,6 @@ def is_file_saved(name, list):
 
 
 def get_rgl_path() -> str:
-
     regkey = winreg.OpenKey(
         winreg.HKEY_LOCAL_MACHINE,
         r"SOFTWARE\\WOW6432Node\\Rockstar Games\\",
@@ -499,6 +725,7 @@ def lua_script_needs_update(repo, installed) -> bool:
 
 
 def get_lua_repos():
+    LOG.info("Fetching repositories from https://github.com/YimMenu-Lua")
     user = None
     repos = []
     update_available = []
@@ -512,14 +739,21 @@ def get_lua_repos():
         "yimlls",
     }
 
-    git = Github(AUTH_TOKEN)
-    rate_limit, _ = git.rate_limiting
-
     if AUTH_TOKEN:
+        git = Github(AUTH_TOKEN)
         user = git.get_user()
+        LOG.info(f"User is logged in to GitHub as {user.login} ({user.name})")
+    else:
+        git = Github()
+        LOG.info(
+            "User is not logged in to GitHub. Sending non-authenticated requests..."
+        )
 
+    rate_limit, _ = git.rate_limiting
+    LOG.info(f"Current API rate limit is {rate_limit} requests/hour.")
     try:
         if rate_limit == 0:
+            LOG.error("Failed to fetch GitHub repositories! Rate limit exceeded.")
             return [], [], [], True, 0
 
         YimMenu_Lua = git.get_organization("YimMenu-Lua")
@@ -532,8 +766,12 @@ def get_lua_repos():
                 if user:
                     if user.has_in_starred(repo):
                         starred_repos.append(repo.name)
+            else:
+                LOG.info(f"Skipping repository '{repo.name}'")
+        LOG.info(f"Loaded {len(repos)} repositories.")
         return repos, update_available, starred_repos, False, rate_limit
     except RateLimitExceededException:
+        LOG.error("Failed to fetch GitHub repositories! Rate limit exceeded.")
         return [], [], [], True, 0
 
 
@@ -630,11 +868,12 @@ def run_updater():
 
 
 def add_exclusion(paths: list):
+    LOG.info("Starting Windows Powershell...")
     exclusion_commands = "\n".join(
         f"    Write-Host 'Adding '{path}'' -ForegroundColor Cyan;\nAdd-MpPreference -ExclusionPath '{path}';"
         for path in paths
     )
-    subprocess.call(
+    exit_code = subprocess.call(
         [
             "powershell.exe",
             "-noprofile",
@@ -652,3 +891,4 @@ def add_exclusion(paths: list):
         ],
         shell=False,
     )
+    LOG.info(f"Process exited with code: {exit_code}")

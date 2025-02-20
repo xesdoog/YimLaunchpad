@@ -7,12 +7,13 @@ from pathlib import Path
 from win32gui import FindWindow, SetForegroundWindow
 from src import utils, gui
 
-YLP_VERSION = "1.0.0.1"
+YLP_VERSION = "1.0.0.2"
 PARENT_PATH = Path(__file__).parent
 ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), "YimLaunchpad")
 UPDATE_PATH = os.path.join(LAUNCHPAD_PATH, "update")
-LOG = utils.LOGGER()
+LOG = utils.LOGGER(YLP_VERSION)
+MemoryScanner = utils.MemoryScanner()
 ImGui = gui.imgui
 this_window = FindWindow(None, "YimLaunchpad")
 if this_window != 0:
@@ -24,12 +25,12 @@ if this_window != 0:
 
 if not os.path.exists(LAUNCHPAD_PATH):
     os.mkdir(LAUNCHPAD_PATH)
-LOG.OnStart(LAUNCHPAD_PATH, YLP_VERSION)
+
+LOG.on_init()
 
 
 import atexit
 import io
-import psutil
 import requests
 import subprocess
 import zipfile
@@ -53,6 +54,8 @@ ylp_update_active = False
 yim_update_avail = False
 yim_update_active = False
 game_is_running = False
+is_menu_injected = False
+is_fsl_enabled = False
 window = None
 ylp_ver_thread = None
 ylp_down_thread = None
@@ -84,6 +87,7 @@ YIM_MENU_PATH = os.path.join(os.getenv("APPDATA"), "YimMenu")
 YIM_SCRIPTS_PATH = os.path.join(YIM_MENU_PATH, "scripts")
 YIM_SETTINGS = os.path.join(YIM_MENU_PATH, "settings.json")
 auto_exit = utils.read_cfg_item(CONFIG_PATH, "auto_exit_after_injection")
+launchpad_console = utils.read_cfg_item(CONFIG_PATH, "launchpad_console")
 GitOAuth = utils.GitHubOAuth()
 updatable_luas = []
 starred_luas = []
@@ -126,6 +130,7 @@ default_cfg = {
     "theme": UIThemes["Dark"],
     "custom_dlls": False,
     "auto_exit_after_injection": False,
+    "launchpad_console": False,
     "auto_inject": False,
     "auto_inject_delay": 0,
     "git_logged_in": False,
@@ -300,9 +305,7 @@ def check_for_ylp_update():
                 LOG.info("Update available!")
                 task_status_col = ImGreen
                 task_status = f"Update {remote_version} is available."
-                # gui.toast(
-                #     f"YimLaunchpad v{remote_version} is available.", run_ylp_update
-                # )
+                gui.toast(f"YimLaunchpad v{remote_version} is available.")
                 ylp_update_avail = True
             elif YLP_VERSION == remote_version:
                 LOG.info(
@@ -324,9 +327,7 @@ def check_for_ylp_update():
             task_status_col = ImRed
             ylp_update_active = False
             task_status = "An error occured while attempting to check for updates. Check the log for more details."
-            LOG.error(
-                f"An error occured! Traceback: function check_for_ylp_update() -> {e}"
-            )
+            LOG.error(f"An error occured! Traceback: {e}")
             ylp_update_avail = False
     else:
         task_status_col = ImRed
@@ -354,7 +355,7 @@ def check_for_yim_update():
             if local_sha != remote_sha:
                 LOG.info("Update available!")
                 task_status = "Update available."
-                # gui.toast("A new update for YimMenu is available.", run_yim_download())
+                gui.toast("A new update for YimMenu is available.")
                 task_status_col = ImGreen
                 yim_update_avail = True
             else:
@@ -363,9 +364,7 @@ def check_for_yim_update():
                 yim_update_avail = False
         except Exception as e:
             task_status = "An error occured while attempting to check for updates! Check the log for more details."
-            LOG.error(
-                f"An error occured! Traceback: function check_for_yim_update() -> {e}"
-            )
+            LOG.error(f"An error occured! Traceback: {e}")
             yim_update_avail = False
     else:
         task_status_col = ImRed
@@ -403,15 +402,27 @@ def yimlaunchapd_init():
     task_status = "Checking for YimMenu updates..."
     check_for_yim_update()
     task_status = "Verifying YimLaunchpad config..."
+    LOG.info("Verifying YimLaunchpad config...")
     dummy_progress()
-    saved_config = utils.read_cfg(CONFIG_PATH)
-    if len(saved_config) != len(default_cfg):
-        for key in default_cfg:
-            if key not in saved_config:
-                saved_config.update({key: default_cfg[key]})
-                utils.save_cfg(CONFIG_PATH, saved_config)
+    saved_config: dict = utils.read_cfg(CONFIG_PATH)
+    len(saved_config) != len(default_cfg)
+    try:
+        if len(saved_config) < len(default_cfg):
+            for key in default_cfg:
+                if key not in saved_config:
+                    saved_config.update({key: default_cfg[key]})
+                    LOG.info(f'Added missing config key: "{key}".')
+        elif len(saved_config) > len(default_cfg):
+            for key in saved_config.copy():
+                if key not in default_cfg:
+                    del saved_config[key]
+                    LOG.info(f'Removed stale config key: "{key}".')
+        utils.save_cfg(CONFIG_PATH, saved_config)
+    except Exception as e:
+        LOG.error(e)
     task_status_col = None
     task_status = ""
+    LOG.info("Initialization complete.")
 
 
 ylp_init_thread = threadpool.submit(yimlaunchapd_init)
@@ -455,9 +466,7 @@ def download_yim_menu():
                     f"Download failed! The request returned status code: {response.status_code}"
                 )
     except requests.exceptions.RequestException as e:
-        LOG.error(
-            f"An error occured while trying to download YimMenu. Traceback: function download_yim_menu() -> {e}"
-        )
+        LOG.error(f"An error occured while trying to download YimMenu. Traceback: {e}")
         task_status_col = ImRed
         task_status = "Download failed! Check the log for more details."
     sleep(5)
@@ -521,7 +530,7 @@ def download_update():
         except Exception as e:
             task_status_col = ImRed
             task_status = "An error occured! Check the log for more details"
-            LOG.error(f"An error occured! Traceback: function download_update() -> {e}")
+            LOG.error(f"An error occured! Traceback: {e}")
             utils.delete_item(UPDATE_PATH)
             sleep(3)
 
@@ -584,19 +593,13 @@ def check_lua_repos():
                 "GitHub API rate limit exceeded! Please try again in a few minutes."
             )
 
-        # if len(updatable_luas) > 0:
-        #     gui.toast(
-        #         "Updates are available for some of your installed Lua scripts.",
-        #         15,
-        #         True,
-        #     )
+        if len(updatable_luas) > 0:
+            gui.toast("Updates are available for some of your installed Lua scripts.")
 
     except Exception as e:
         task_status_col = ImRed
         task_status = "An error occured! Check the log for more details."
-        LOG.error(
-            f"Failed to get repository information! Traceback: function check_lua_repos() -> {e}"
-        )
+        LOG.error(f"Failed to get repository information! Traceback: {e}")
         pass
 
     sleep(5)
@@ -695,9 +698,7 @@ def inject_dll(dll, process_id):
             task_status = "Process not found! Is the game running?"
             task_status_col = ImRed
     except Exception as e:
-        LOG.critical(
-            f"An exception has occured! Traceback: function inject_dll() -> {e}"
-        )
+        LOG.critical(f"An exception has occured! Traceback: {e}")
         task_status = "Injection failed! Check the log for more details."
         task_status_col = ImRed
 
@@ -718,32 +719,25 @@ def run_inject_thread(path, process):
 def background_thread():
     global process_id
     global game_is_running
+    global is_menu_injected
+    global is_fsl_enabled
+    global should_exit
 
     try:
-        for p in psutil.process_iter(["name", "exe", "cmdline"]):
-            sleep(0.01)
-            if (
-                "GTA5.exe" == p.info["name"]
-                or p.info["exe"]
-                and os.path.basename(p.info["exe"]) == "GTA5.exe"
-                or p.info["cmdline"]
-                and p.info["cmdline"][0] == "GTA5.exe"
-            ):
-                pid = p.pid
-                break
-            else:
-                pid = 0
-        if pid is not None and pid != 0:
-            process_id = pid
-            game_is_running = True
+        MemoryScanner.find_process("GTA5.exe", 0.01)
+        game_is_running = MemoryScanner.is_process_running()
+        if game_is_running:
+            process_id = MemoryScanner.pid
+            is_menu_injected = MemoryScanner.is_module_loaded("YimMenu.dll")
+            is_fsl_enabled = MemoryScanner.is_module_loaded("version.dll")
         else:
-            process_id = 0
-            game_is_running = False
+            is_menu_injected = False
+            is_fsl_enabled = False
+        sleep(1)
     except Exception as e:
-        LOG.error(
-            f"An error has occured while trying to find the game's process. Traceback: function background_thread() -> {e}"
+        LOG.critical(
+            f"An error occured while trying to find the game's process. Traceback: {e}"
         )
-    sleep(1)
 
 
 def run_background_thread():
@@ -907,22 +901,25 @@ def OnDraw():
     global repos
     global updatable_luas
     global auto_exit
+    global launchpad_console
 
     custom_dlls = utils.read_cfg_item(CONFIG_PATH, "custom_dlls")
     dll_files = utils.read_cfg_item(CONFIG_PATH, "dll_files") or []
     git_logged_in = utils.read_cfg_item(CONFIG_PATH, "git_logged_in")
     git_username = utils.read_cfg_item(CONFIG_PATH, "git_username")
-    debug_settings = utils.read_cfg_item(YIM_SETTINGS, "debug")
-    lua_settings = utils.read_cfg_item(YIM_SETTINGS, "lua")
+    yim_debug_settings = utils.read_cfg_item(YIM_SETTINGS, "debug")
+    yim_lua_settings = utils.read_cfg_item(YIM_SETTINGS, "lua")
     dll_index = 0
     launcher_index = 0
     repo_index = 0
-    disable_console = (
-        debug_settings is not None and not debug_settings["external_console"] or False
+    yim_debug_console = (
+        yim_debug_settings is not None
+        and yim_debug_settings["external_console"]
+        or False
     )
     lua_auto_reload = (
-        lua_settings is not None
-        and lua_settings["enable_auto_reload_changed_scripts"]
+        yim_lua_settings is not None
+        and yim_lua_settings["enable_auto_reload_changed_scripts"]
         or False
     )
     repos_checked = False
@@ -1010,6 +1007,11 @@ def OnDraw():
 
     impl.refresh_font_texture()
 
+    if launchpad_console:
+        LOG.show_console()
+    else:
+        LOG.hide_console()
+
     while (
         not gui.glfw.window_should_close(window)
         and not pending_update
@@ -1055,7 +1057,20 @@ def OnDraw():
                         with ImGui.begin_child("##yimmenu", border=True):
                             with ImGui.font(title_font):
                                 gui.separator_text("YimMenu")
-                            ImGui.dummy(1, 10)
+                            with ImGui.font(small_font):
+                                ImGui.bullet_text("State:")
+                                ImGui.same_line()
+                                ImGui.text_colored(
+                                    (
+                                        "Injected."
+                                        if is_menu_injected
+                                        else "Not Injected."
+                                    ),
+                                    0 if is_menu_injected else 1,
+                                    1 if is_menu_injected else 0,
+                                    0,
+                                    0.88,
+                                )
                             if not yim_update_active:
                                 if os.path.isfile(YIMDLL_FILE):
                                     yim_update_btn_label = (
@@ -1083,30 +1098,60 @@ def OnDraw():
                             with ImGui.font(small_font):
                                 ImGui.bullet_text("Game Status:")
                                 ImGui.same_line()
-                            if game_is_running:
-                                with ImGui.font(small_font):
-                                    ImGui.text_colored("Running.", 0, 1, 0, 0.88)
-                                ImGui.dummy(1, 5)
-                                if ImGui.button(f"{Icons.Rocket}  Inject YimMenu"):
-                                    run_inject_thread(YIMDLL_FILE, process_id)
-                                ImGui.same_line()
-                                dc_clicked, disable_console = ImGui.checkbox(
-                                    "Disable Console", disable_console
+                                ImGui.text_colored(
+                                    "Running." if is_fsl_enabled else "Not running.",
+                                    0 if is_fsl_enabled else 1,
+                                    1 if is_fsl_enabled else 0,
+                                    0,
+                                    0.88,
                                 )
+                                ImGui.same_line(spacing=5)
+                                ImGui.bullet_text("FSL:")
                                 gui.tooltip(
-                                    "If you want to hide/show YimMenu's debug console, do it before injecting."
+                                    "Because FSL is hosted on UnknownCheats, YimLaunchpad can not download it for you. You can, however, click on the 4th icon at the bottom of the UI to directly visit FSL's unknowncheats thead in your browser.",
+                                    main_font,
+                                    0.9,
                                 )
-                                if dc_clicked:
-                                    debug_settings["external_console"] = (
-                                        not disable_console
+                                ImGui.same_line()
+                                if game_is_running:
+                                    fsl_label = (
+                                        "Enabled." if is_fsl_enabled else "Disabled."
                                     )
-                                    utils.save_cfg_item(
-                                        YIM_SETTINGS, "debug", debug_settings
-                                    )
-                            else:
-                                with ImGui.font(small_font):
-                                    ImGui.text_colored("Not running.", 1, 0, 0, 0.88)
+                                else:
+                                    fsl_label = "Unknown"
+                                ImGui.text_colored(
+                                    fsl_label,
+                                    0 if is_fsl_enabled else 1,
+                                    1 if is_fsl_enabled else 0,
+                                    0,
+                                    0.88,
+                                )
                                 ImGui.dummy(1, 5)
+                            if game_is_running:
+                                with gui.begin_disabled(is_menu_injected):
+                                    if (
+                                        ImGui.button(f"{Icons.Rocket}  Inject YimMenu")
+                                        and not is_menu_injected
+                                    ):
+                                        run_inject_thread(YIMDLL_FILE, process_id)
+                                if is_menu_injected:
+                                    gui.tooltip("YimMenu is already injected.")
+                                else:
+                                    ImGui.same_line()
+                                    dc_clicked, yim_debug_console = ImGui.checkbox(
+                                        "Debug Console", yim_debug_console
+                                    )
+                                    gui.tooltip(
+                                        "If you want to hide/show YimMenu's debug console, do it before injecting."
+                                    )
+                                    if dc_clicked:
+                                        yim_debug_settings["external_console"] = (
+                                            not yim_debug_console
+                                        )
+                                        utils.save_cfg_item(
+                                            YIM_SETTINGS, "debug", yim_debug_settings
+                                        )
+                            else:
                                 ImGui.set_next_item_width(200)
                                 _, launcher_index = ImGui.combo(
                                     "##launchers", launcher_index, LAUNCHERS
@@ -1201,14 +1246,17 @@ def OnDraw():
                             else:
                                 gui.busy_button(busy_icon, "Please Wait")
 
-                            lar_clicked, lua_auto_reload = ImGui.checkbox(
-                                "Auto-Reload Lua Scripts", lua_auto_reload
-                            )
-                            if lar_clicked:
-                                lua_settings["enable_auto_reload_changed_scripts"] = (
-                                    lua_auto_reload
+                            if not is_menu_injected:
+                                lar_clicked, lua_auto_reload = ImGui.checkbox(
+                                    "Auto-Reload Lua Scripts", lua_auto_reload
                                 )
-                                utils.save_cfg_item(YIM_SETTINGS, "lua", lua_settings)
+                                if lar_clicked:
+                                    yim_lua_settings[
+                                        "enable_auto_reload_changed_scripts"
+                                    ] = lua_auto_reload
+                                    utils.save_cfg_item(
+                                        YIM_SETTINGS, "lua", yim_lua_settings
+                                    )
 
                             if (
                                 lua_repos_thread
@@ -1371,12 +1419,28 @@ def OnDraw():
 
                             ImGui.dummy(1, 5)
                             autoexitclicked, auto_exit = ImGui.checkbox(
-                                "Auto-Exit After Injection", auto_exit
+                                "Auto-Exit", auto_exit
                             )
                             if autoexitclicked:
                                 utils.save_cfg_item(
                                     CONFIG_PATH, "auto_exit_after_injection", auto_exit
                                 )
+                            gui.tooltip(
+                                "Automatically close YimLaunchpad after injecting a DLL."
+                            )
+                            ImGui.same_line(spacing=20)
+                            clicked, launchpad_console = ImGui.checkbox(
+                                "Debug Console", launchpad_console
+                            )
+                            gui.tooltip("Enable/Disable YimLaunchpad's debug console.")
+                            if clicked:
+                                utils.save_cfg_item(
+                                    CONFIG_PATH, "launchpad_console", launchpad_console
+                                )
+                                if launchpad_console:
+                                    LOG.show_console()
+                                else:
+                                    LOG.hide_console()
                             ImGui.dummy(1, 10)
                             gui.separator_text(f"{Icons.GitHub} GitHub")
                             if not git_logged_in:
@@ -1460,7 +1524,6 @@ def OnDraw():
                                 utils.visit_url,
                                 "https://github.com/settings/apps/authorizations",
                             )
-
                             ImGui.pop_text_wrap_pos()
                         ImGui.end_tab_item()
                     ImGui.end_tab_bar()
