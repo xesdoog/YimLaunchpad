@@ -28,11 +28,12 @@ from ctypes import c_size_t as SIZE_T
 from ctypes.wintypes import HANDLE, LPVOID, DWORD
 from datetime import datetime, timezone
 from github import Github, RateLimitExceededException
+from github.Repository import Repository
 from pathlib import Path
 from pymem import Pymem
 from pymem.memory import virtual_query
 from requests_cache import DO_NOT_CACHE, install_cache
-from time import sleep
+from time import sleep, time
 
 
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), "YimLaunchpad")
@@ -161,6 +162,44 @@ def save_cfg_item(file, item_name, value):
         f.close()
 
 
+def delete_folder(folder_path, on_fail=None, *args):
+    if not os.path.exists(folder_path):
+        LOG.error(f"Folder path does not exist. {folder_path}")
+        if on_fail:
+            on_fail("Folder path does not exist.", [1.0, 0.0, 0.0])
+        return
+
+    try:
+        shutil.rmtree(folder_path)
+    except WindowsError:
+        try:
+            os.chmod(folder_path, 0o777)
+            shutil.rmtree(folder_path)
+        except Exception:
+            LOG.error(f"Failed to delete {folder_path}")
+            if on_fail:
+                on_fail(*args)
+
+
+def delete_file(file_path, on_fail=None, *args):
+    if not os.path.exists(file_path) or not os.path.isfile(file_path):
+        LOG.error(f"Path either does not exist or is not a file: {file_path}")
+        if on_fail:
+            on_fail("Path either does not exist or is not a file.", [1.0, 0.0, 0.0])
+        return
+
+    try:
+        os.remove(file_path)
+    except WindowsError:
+        try:
+            os.chmod(file_path, 0o777)
+            os.remove(file_path)
+        except Exception:
+            LOG.error(f"Failed to delete {file_path}")
+            if on_fail:
+                on_fail(*args)
+
+
 class CustomLogHandler(logging.FileHandler):
     def __init__(
         self,
@@ -267,27 +306,8 @@ class LOGGER:
 LOG = LOGGER()
 
 
-def store_token(token):
-    keyring.set_password("YLPGIT", "YimLaunchpad", token)
-
-
-def get_token():
-    try:
-        return keyring.get_password("YLPGIT", "YimLaunchpad")
-    except Exception as e:
-        LOG.error(f"Failed to read GitHub token: {e}")
-        return None
-
-
-def delete_token():
-    try:
-        keyring.delete_password("YLPGIT", "YimLaunchpad")
-    except Exception as e:
-        LOG.error(f"Failed to delete GitHub token: {e}")
-
-
 if read_cfg_item(CONFIG_PATH, "git_logged_in"):
-    AUTH_TOKEN = get_token()
+    AUTH_TOKEN = keyring.get_password("YLPGIT_ACC", "access_token")
 
 
 class GitHubOAuth:
@@ -336,6 +356,41 @@ class GitHubOAuth:
             self.update_status("Task failed!")
             return None
 
+    def store_tokens(self, access_token, refresh_token, expires_in=28800):
+        keyring.set_password("YLPGIT_ACC", "access_token", access_token)
+        keyring.set_password("YLPGIT_RFR", "refresh_token", refresh_token)
+        keyring.set_password("YLPGIT_EXP", "token_expiry", str(time() + expires_in))
+
+    def get_stored_tokens(self):
+        try:
+            access_token = keyring.get_password("YLPGIT_ACC", "access_token")
+            refresh_token = keyring.get_password("YLPGIT_RFR", "refresh_token")
+            expiry = keyring.get_password("YLPGIT_EXP", "token_expiry")
+            return access_token, refresh_token, float(expiry) if expiry else None
+        except Exception as e:
+            LOG.error(e)
+
+    def delete_tokens(self):
+        try:
+            keyring.delete_password("YLPGIT_ACC", "access_token")
+            keyring.delete_password("YLPGIT_RFR", "refresh_token")
+            keyring.delete_password("YLPGIT_EXP", "token_expiry")
+        except Exception as e:
+            LOG.error(e)
+
+    def save_avatar(self, username: str):
+        avatar_path = os.path.join(LAUNCHPAD_PATH, "avatar.png")
+        url = f"https://avatars.githubusercontent.com/{username}"
+        response = requests.get(url, stream=True)
+        if response.status_code == 200:
+            with open(avatar_path, "wb") as f:
+                for chunk in response.iter_content(1024):
+                    f.write(chunk)
+                f.close()
+
+    def delete_avatar(self):
+        delete_file(os.path.join(LAUNCHPAD_PATH, "avatar.png"))
+
     @reset_abort
     def request_device_code(self):
         LOG.info(
@@ -350,7 +405,7 @@ class GitHubOAuth:
     @reset_abort
     def request_token(self, device_code):
         LOG.info(
-            f"Requesting authorization token... | App: YimLaunchpad | Client ID: {CLIENT_ID} | Device Code: {device_code}"
+            f"Requesting authorization token... | Client ID: {CLIENT_ID} | Device Code: {device_code} |"
         )
         url = "https://github.com/login/oauth/access_token"
         headers = {"Accept": "application/json"}
@@ -368,10 +423,13 @@ class GitHubOAuth:
             response = self.request_token(device_code)
             if response is None:
                 LOG.error("Task failed: No response.")
+                self.update_status("Login failed!")
+                sleep(2)
                 return None
 
             error = response.get("error")
             access_token = response.get("access_token")
+            refresh_token = response.get("refresh_token")
 
             if error:
                 if error == "authorization_pending":
@@ -388,32 +446,90 @@ class GitHubOAuth:
                     self.update_status(
                         "The device code has expired! Please login again."
                     )
-                    sleep(1)
                     return None
                 elif error == "access_denied":
                     LOG.warning("Login canceled.")
                     self.update_status("Login canceled.")
-                    sleep(1)
                     return None
                 else:
-                    LOG.error(f"An error occured: {response}")
+                    LOG.error(f"An error occurred: {response}")
                     self.update_status("Login failed!")
-                    sleep(1)
                     return response
+
+            self.store_tokens(access_token, refresh_token)
             LOG.info("Authorization granted.")
             return access_token
 
     @reset_abort
+    def refresh_token(self):
+        _, refresh_token, _ = self.get_stored_tokens()
+        if not refresh_token:
+            LOG.warning("No refresh token found! User must reauthenticate.")
+            save_cfg_item(CONFIG_PATH, "git_logged_in", False)
+            save_cfg_item(CONFIG_PATH, "git_username", "")
+            self.update_status("Failed to get a refresh token! Please login again.")
+            sleep(1)
+            return None
+
+        url = "https://github.com/login/oauth/access_token"
+        headers = {"Accept": "application/json"}
+        data = {
+            "client_id": CLIENT_ID,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        }
+
+        LOG.info("Refreshing GitHub token...")
+        response = requests.post(url, data=data, headers=headers)
+        token_data = self.parse_response(response)
+
+        if token_data and "access_token" in token_data:
+            LOG.info("Token refreshed successfully!")
+            self.store_tokens(token_data["access_token"], token_data["refresh_token"])
+            return token_data["access_token"]
+
+        LOG.error("Failed to refresh token! User must reauthenticate.")
+        self.delete_tokens()
+        save_cfg_item(CONFIG_PATH, "git_logged_in", False)
+        save_cfg_item(CONFIG_PATH, "git_username", "")
+        self.update_status("Failed to get a refresh token! Please login again.")
+        sleep(1)
+        return None
+
+    @reset_abort
     def login(self):
         global AUTH_TOKEN
+        access_token, _, expiry = self.get_stored_tokens()
+
+        if access_token and time() < expiry:
+            LOG.info("Existing token is still valid.")
+            AUTH_TOKEN = access_token
+            return
+
+        if access_token and time() >= expiry:
+            LOG.info("Access token expired. Attempting to refresh...")
+            new_token = self.refresh_token()
+            if new_token:
+                AUTH_TOKEN = new_token
+                return
+
+        LOG.info("No valid tokens found. Starting login process...")
+        self.delete_tokens()
         device_code_data = self.request_device_code()
         if not device_code_data:
+            save_cfg_item(CONFIG_PATH, "git_logged_in", False)
+            save_cfg_item(CONFIG_PATH, "git_username", "")
+            self.update_status(
+                "Failed to refresh GitHub access Token!. Please login again."
+            )
+            sleep(3)
             return
 
         verification_uri = device_code_data["verification_uri"]
         user_code = device_code_data["user_code"]
         device_code = device_code_data["device_code"]
         interval = device_code_data["interval"]
+
         self.update_status(
             f"Please visit: {verification_uri} and enter this code: {user_code}"
         )
@@ -421,19 +537,20 @@ class GitHubOAuth:
 
         if access_token:
             LOG.info("Authenticating user...")
-            store_token(access_token)
             git = Github(access_token)
             save_cfg_item(CONFIG_PATH, "git_logged_in", True)
             save_cfg_item(CONFIG_PATH, "git_username", git.get_user().login)
-            AUTH_TOKEN = get_token()
+            self.save_avatar(git.get_user().login)
+            AUTH_TOKEN = access_token
             LOG.info(
-                f"Successfully authenticated with GitHub as {git.get_user().login} ({git.get_user().name})"
+                f"Successfully authenticated as {git.get_user().login} ({git.get_user().name})"
             )
             self.update_status("Authentication successful")
             sleep(3)
 
     def logout(self):
-        delete_token()
+        self.delete_tokens()
+        self.delete_avatar()
         save_cfg_item(CONFIG_PATH, "git_logged_in", False)
         save_cfg_item(CONFIG_PATH, "git_username", "")
         LOG.info("Logged out of GitHub.")
@@ -560,15 +677,18 @@ class MemoryScanner:
             memory = self.read_process_memory(
                 self.process_handle, base_address, chunk_size
             )
-            baseAddr = self.get_base_address()
             for i in range(len(memory) - len(pattern) + 1):
                 if self.memory_compare(memory[i:], pattern, mask):
-                    found_address = baseAddr + i
+                    found_address = base_address + i
+                    print("")
+                    print(f"Found pattern at address {hex(found_address)}")
                     return found_address
-            baseAddr += chunk_size
-            # print(f"scanning {hex(baseAddr + chunk_size)}")
-            if baseAddr > 0x7FFFFFFFFFFF:
+            base_address += chunk_size
+            print(f"Scanning {hex(base_address + chunk_size)}", end="\r", flush=True)
+            if base_address > 0x7FFFFFFFFFFF:
                 LOG.warning("[SCANNER] Memory limit reached!")
+                print("")
+                print("Memory limit reached!")
                 return 0
 
 
@@ -610,10 +730,11 @@ def calc_file_checksum(file):
         return None
 
 
-def append_short_sha(file) -> str:
+def append_short_sha(file: str):
     checksum = str(calc_file_checksum(file))[:6]
-    file_name = f"{os.path.basename(file)} [{checksum}]"
-    return file_name
+    if len(checksum) == 6:
+        return f"{os.path.basename(file)} [{checksum}]"
+    return str(os.path.basename(file))
 
 
 def get_remote_checksum():
@@ -666,42 +787,23 @@ def get_rgl_path() -> str:
         )
 
 
-def open_folder(path):
+def open_folder(path: str):
     if not os.path.exists(path):
         os.makedirs(path)
     subprocess.Popen(f"explorer {os.path.abspath(path)}")
 
 
-def delete_item(path, on_fail=None, *args):
-    if not os.path.exists(path):
-        LOG.error(f"No such file or directory {path}")
-        if on_fail:
-            on_fail("No such file or directory!", [1.0, 0.0, 0.0])
-        return
-
-    try:
-        shutil.rmtree(path)
-    except WindowsError:
-        try:
-            os.chmod(path, 0o777)
-            shutil.rmtree(path)
-        except Exception:
-            LOG.error(f"Failed to delete {path}")
-            if on_fail:
-                on_fail(*args)
-
-
-def visit_url(url):
+def visit_url(url: str):
     webbrowser.open_new_tab(url)
 
 
-def is_repo_starred(repo_name, starred_list):
+def is_repo_starred(repo_name: str, starred_list: list):
     if len(starred_list) > 0:
         return repo_name in starred_list
     return False
 
 
-def is_repo_empty(repo, path=""):
+def is_repo_empty(repo: Repository, path=""):
     try:
         contents = repo.get_contents(path)
         for file in contents:
@@ -714,7 +816,7 @@ def is_repo_empty(repo, path=""):
         return True
 
 
-def lua_script_needs_update(repo, installed) -> bool:
+def lua_script_needs_update(repo: Repository, installed: dict) -> bool:
     if len(installed) > 0 and repo.name in installed:
         local_date = installed[repo.name]["date_modified"]
         last_commit = repo.get_commits()[0]
@@ -752,11 +854,13 @@ def get_lua_repos():
     rate_limit, _ = git.rate_limiting
     LOG.info(f"Current API rate limit is {rate_limit} requests/hour.")
     try:
+
         if rate_limit == 0:
             LOG.error("Failed to fetch GitHub repositories! Rate limit exceeded.")
             return [], [], [], True, 0
 
         YimMenu_Lua = git.get_organization("YimMenu-Lua")
+
         for repo in YimMenu_Lua.get_repos(sort="pushed", direction="desc"):
             if str(repo.name).lower() not in exclude_repos:
                 repos.append(repo)
@@ -770,25 +874,26 @@ def get_lua_repos():
                 LOG.info(f"Skipping repository '{repo.name}'")
         LOG.info(f"Loaded {len(repos)} repositories.")
         return repos, update_available, starred_repos, False, rate_limit
+
     except RateLimitExceededException:
         LOG.error("Failed to fetch GitHub repositories! Rate limit exceeded.")
         return [], [], [], True, 0
 
 
-def refresh_repository(repo):
+def refresh_repository(repo: Repository):
     git = Github(AUTH_TOKEN)
     rate_limit, _ = git.rate_limiting
     try:
         if rate_limit == 0:
-            return repo, "Rate limit exceeded"
+            return repo, 0
+
         YimMenu_Lua = git.get_organization("YimMenu-Lua")
-        return YimMenu_Lua.get_repo(repo.name), f"Refreshing {repo.name}..."
+        return YimMenu_Lua.get_repo(repo.name), rate_limit
     except RateLimitExceededException:
-        return repo, "Rate limit exceeded"
+        return repo, 0
 
 
 def get_installed_scripts():
-
     Luas = {}
 
     if os.path.exists(YIM_SCRIPTS_PATH):
@@ -818,11 +923,11 @@ def get_installed_scripts():
     return Luas
 
 
-def is_script_installed(repo):
+def is_script_installed(repo: Repository):
     return os.path.exists(os.path.join(YIM_SCRIPTS_PATH, repo.name))
 
 
-def is_script_disabled(repo):
+def is_script_disabled(repo: Repository):
     return os.path.exists(
         os.path.join(os.path.join(YIM_SCRIPTS_PATH, "disabled"), repo.name)
     )
@@ -873,22 +978,26 @@ def add_exclusion(paths: list):
         f"    Write-Host 'Adding '{path}'' -ForegroundColor Cyan;\nAdd-MpPreference -ExclusionPath '{path}';"
         for path in paths
     )
-    exit_code = subprocess.call(
-        [
-            "powershell.exe",
-            "-noprofile",
-            "-c",
-            f"""
-        Start-Process -Verb RunAs -PassThru -Wait powershell.exe -Args "
-            -noprofile -NoExit -Command &{{
-                {exclusion_commands}
-                Write-Host 'Done.' -ForegroundColor Green;
-                Read-Host 'Press any key to exit'
-                exit
-            }}
-        "
-        """,
-        ],
-        shell=False,
-    )
-    LOG.info(f"Process exited with code: {exit_code}")
+    try:
+        exit_code = subprocess.call(
+            [
+                "powershell.exe",
+                "-noprofile",
+                "-c",
+                f"""
+            Start-Process -Verb RunAs -PassThru -Wait powershell.exe -Args "
+                -noprofile -NoExit -Command &{{
+                    {exclusion_commands}
+                    Write-Host 'Done.' -ForegroundColor Green;
+                    Read-Host 'Press any key to exit'
+                    exit
+                }}
+            "
+            """,
+            ],
+            shell=False,
+        )
+        LOG.info(f"Process exited with code: {exit_code}")
+    except Exception:
+        LOG.error(f"Failed to add exclusions.")
+        pass

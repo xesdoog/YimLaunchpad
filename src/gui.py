@@ -10,6 +10,7 @@ import os
 import win32con
 
 from contextlib import contextmanager
+from cv2 import cvtColor, imread, COLOR_BGR2RGBA, IMREAD_UNCHANGED
 from win11toast import notify
 
 
@@ -96,6 +97,50 @@ def start_file_dialog(extension: str, multiselect: bool) -> list | str:
 
     except pywinErr:
         return None
+
+
+def draw_image(path: str):
+    try:
+        img = imread(path, IMREAD_UNCHANGED)
+        if img is None:
+            print("Error loading image.")
+            return 0, 0, 0
+
+        img = cvtColor(img, COLOR_BGR2RGBA)
+        h, w = img.shape[:2]
+
+        img_data = np.ascontiguousarray(img, dtype=np.uint8)
+
+        texture = gl.glGenTextures(1)
+        if texture == 0:
+            return 0, 0, 0
+
+        gl.glBindTexture(gl.GL_TEXTURE_2D, texture)
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
+        gl.glPixelStorei(gl.GL_UNPACK_ALIGNMENT, 1)
+        gl.glTexImage2D(
+            gl.GL_TEXTURE_2D,
+            0,
+            gl.GL_RGBA,
+            w,
+            h,
+            0,
+            gl.GL_RGBA,
+            gl.GL_UNSIGNED_BYTE,
+            img_data,
+        )
+
+        error = gl.glGetError()
+        if error != gl.GL_NO_ERROR:
+            print(f"OpenGL error: {error}")
+            return 0, 0, 0
+
+        gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+        return texture, w, h
+    except Exception as e:
+        print(f"Unhandled exception: {e}")
+        return 0, 0, 0
 
 
 def fb_to_window_factor(window):
@@ -341,6 +386,16 @@ def separator_text(text, padding=10):
     imgui.set_cursor_pos_x(cursor_x + padding)
     imgui.text(text)
     imgui.set_cursor_pos_y(cursor_y - (imgui.get_text_line_height() / 3))
+
+
+def image_rounded(texture_id, diameter, uv_a=(0, 0), uv_b=(1, 1)):
+    draw_list = imgui.get_window_draw_list()
+    p_min = imgui.get_cursor_screen_pos()
+    p_max = (p_min.x + diameter, p_min.y + diameter)
+    draw_list.add_image_rounded(
+        texture_id, (p_min.x, p_min.y), p_max, uv_a, uv_b, 0xFFFFFFFF, diameter * 0.5
+    )
+    imgui.dummy(diameter, diameter)
 
 
 def clickable_icon(icon, font, tooltip_text, callback, *args):

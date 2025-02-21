@@ -49,12 +49,13 @@ A launchpad for YimMenu.
 
 ###  
 
-###  
-
 ## TODO
 
 - [ ] Add themes.
-- [ ] Add automatic injection *(if I can for the life of me figure out a signature for the landing page)*
+- [ ] Add automatic injection. *(if I can figure out a signature for the landing page)*
+- [ ] Refresh installed Lua scripts individually to check for updates. *(I've already written the function. I'm just too lazy to add a button that calls the damn function -_-)*
+
+###  
 
 ## Showcase
 
@@ -76,4 +77,10 @@ A launchpad for YimMenu.
 
 ### Settings (With GitHub Auth)
 
-![settings_1](https://github.com/user-attachments/assets/886df881-ab24-4bf8-91a7-74b8a6aef62a)
+![settings_1](https://github.com/user-attachments/assets/e9c4472b-6af7-4838-9473-028ae7cb3e8c)
+
+
+## Licenses
+
+- This program uses Google's Rokkit Regular font, licensed under [SIL Open Font License V1.1](https://openfontlicense.org/open-font-license-official-text/)
+- This program uses the free version of FontAwesome v4.7 also licensed under [SIL Open Font License V1.1](https://openfontlicense.org/open-font-license-official-text/)

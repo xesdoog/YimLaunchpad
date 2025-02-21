@@ -7,20 +7,20 @@ from pathlib import Path
 from win32gui import FindWindow, SetForegroundWindow
 from src import utils, gui
 
-YLP_VERSION = "1.0.0.2"
+YLP_VERSION = "1.0.0.3"
 PARENT_PATH = Path(__file__).parent
 ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), "YimLaunchpad")
+AVATAR_PATH = os.path.join(LAUNCHPAD_PATH, "avatar.png")
 UPDATE_PATH = os.path.join(LAUNCHPAD_PATH, "update")
 LOG = utils.LOGGER(YLP_VERSION)
-MemoryScanner = utils.MemoryScanner()
-ImGui = gui.imgui
-this_window = FindWindow(None, "YimLaunchpad")
-if this_window != 0:
+
+launchpad_window = FindWindow(None, "YimLaunchpad")
+if launchpad_window != 0:
     LOG.warning(
         "YimLaunchpad is aleady running! Only one instance can be launched at once.\n"
     )
-    SetForegroundWindow(this_window)
+    SetForegroundWindow(launchpad_window)
     sys.exit(0)
 
 if not os.path.exists(LAUNCHPAD_PATH):
@@ -36,6 +36,7 @@ import subprocess
 import zipfile
 
 from concurrent.futures import ThreadPoolExecutor
+from github.Repository import Repository
 from imgui.integrations.glfw import GlfwRenderer
 from pyinjector import inject
 from threading import Thread
@@ -43,6 +44,8 @@ from time import sleep
 
 
 Icons = gui.Icons
+MemoryScanner = utils.MemoryScanner()
+ImGui = gui.imgui
 threadpool = ThreadPoolExecutor(max_workers=3)
 progress_value = 0
 process_id = 0
@@ -375,6 +378,41 @@ def check_for_yim_update():
     task_status = ""
 
 
+def check_saved_config():
+    saved_config: dict = utils.read_cfg(CONFIG_PATH)
+    if len(saved_config) != len(default_cfg):
+        try:
+            if len(saved_config) < len(default_cfg):
+                for key in default_cfg:
+                    if key not in saved_config:
+                        saved_config.update({key: default_cfg[key]})
+                        LOG.info(f'Added missing config key: "{key}".')
+            elif len(saved_config) > len(default_cfg):
+                for key in saved_config.copy():
+                    if key not in default_cfg:
+                        del saved_config[key]
+                        LOG.info(f'Removed stale config key: "{key}".')
+            utils.save_cfg(CONFIG_PATH, saved_config)
+        except Exception as e:
+            LOG.error(e)
+    dummy_progress()
+
+
+def check_saved_dlls():
+    global task_status
+
+    if utils.read_cfg_item(CONFIG_PATH, "custom_dlls"):
+        dll_files: list = utils.read_cfg_item(CONFIG_PATH, "dll_files")
+        if len(dll_files) > 0:
+            for entry in dll_files.copy():
+                if not os.path.exists(entry["path"]):
+                    dll_files.remove(entry)
+                    LOG.info(
+                        f"Removed {os.path.basename(entry["path"])} because it no longer exists."
+                    )
+            utils.save_cfg_item(CONFIG_PATH, "dll_files", dll_files)
+
+
 def yimlaunchapd_init():
     global yim_update_avail
     global task_status
@@ -403,23 +441,8 @@ def yimlaunchapd_init():
     check_for_yim_update()
     task_status = "Verifying YimLaunchpad config..."
     LOG.info("Verifying YimLaunchpad config...")
-    dummy_progress()
-    saved_config: dict = utils.read_cfg(CONFIG_PATH)
-    len(saved_config) != len(default_cfg)
-    try:
-        if len(saved_config) < len(default_cfg):
-            for key in default_cfg:
-                if key not in saved_config:
-                    saved_config.update({key: default_cfg[key]})
-                    LOG.info(f'Added missing config key: "{key}".')
-        elif len(saved_config) > len(default_cfg):
-            for key in saved_config.copy():
-                if key not in default_cfg:
-                    del saved_config[key]
-                    LOG.info(f'Removed stale config key: "{key}".')
-        utils.save_cfg(CONFIG_PATH, saved_config)
-    except Exception as e:
-        LOG.error(e)
+    check_saved_config()
+    check_saved_dlls()
     task_status_col = None
     task_status = ""
     LOG.info("Initialization complete.")
@@ -513,7 +536,7 @@ def download_update():
                                 progress_value = int(current_size) / int(total_size)
                             else:
                                 LOG.warning("Update canceled by the user.")
-                                utils.delete_item(UPDATE_PATH)
+                                utils.delete_folder(UPDATE_PATH)
                         task_status = "Download complete."
                         for i in range(3):
                             task_status = f"Restarting in ({3 - i}) seconds"
@@ -531,7 +554,7 @@ def download_update():
             task_status_col = ImRed
             task_status = "An error occured! Check the log for more details"
             LOG.error(f"An error occured! Traceback: {e}")
-            utils.delete_item(UPDATE_PATH)
+            utils.delete_folder(UPDATE_PATH)
             sleep(3)
 
     progress_value = 0
@@ -738,6 +761,7 @@ def background_thread():
         LOG.critical(
             f"An error occured while trying to find the game's process. Traceback: {e}"
         )
+    check_saved_dlls()
 
 
 def run_background_thread():
@@ -798,7 +822,7 @@ def run_launch_thread(idx: int):
         launch_thread = threadpool.submit(start_gta, idx)
 
 
-def lua_download_regular(repo, path="", base_path=""):
+def lua_download_regular(repo: Repository, path="", base_path=""):
     global task_status
     global task_status_col
     global progress_value
@@ -834,7 +858,7 @@ def lua_download_regular(repo, path="", base_path=""):
         task_status = ""
 
 
-def lua_download_release(repo):
+def lua_download_release(repo: Repository):
     global task_status
     global task_status_col
     global progress_value
@@ -872,8 +896,9 @@ def lua_download_release(repo):
     return False
 
 
-def lua_download(repo):
+def lua_download(repo: Repository):
     global task_status, progress_value
+
     if not lua_download_release(repo):
         task_status = f"No suitable release found for {repo.name}! Trying to manually download the script..."
         sleep(2)
@@ -884,8 +909,9 @@ def lua_download(repo):
     task_status = ""
 
 
-def run_lua_download(repo):
+def run_lua_download(repo: Repository):
     global lua_downl_thread
+
     if lua_downl_thread and not lua_downl_thread.done():
         pass
     else:
@@ -904,7 +930,6 @@ def OnDraw():
     global launchpad_console
 
     custom_dlls = utils.read_cfg_item(CONFIG_PATH, "custom_dlls")
-    dll_files = utils.read_cfg_item(CONFIG_PATH, "dll_files") or []
     git_logged_in = utils.read_cfg_item(CONFIG_PATH, "git_logged_in")
     git_username = utils.read_cfg_item(CONFIG_PATH, "git_username")
     yim_debug_settings = utils.read_cfg_item(YIM_SETTINGS, "debug")
@@ -1009,8 +1034,13 @@ def OnDraw():
 
     if launchpad_console:
         LOG.show_console()
+
+    if git_logged_in:
+        if not os.path.exists(AVATAR_PATH):
+            GitOAuth.save_avatar(git_username)
+        avatar_texture, _, _ = gui.draw_image(AVATAR_PATH)
     else:
-        LOG.hide_console()
+        avatar_texture = 0
 
     while (
         not gui.glfw.window_should_close(window)
@@ -1172,6 +1202,9 @@ def OnDraw():
                                 with ImGui.begin_child("##dll_list", 330, 160, True):
                                     ImGui.text(f"{Icons.List}  DLL List:")
                                     ImGui.separator()
+                                    dll_files = utils.read_cfg_item(
+                                        CONFIG_PATH, "dll_files"
+                                    )
                                     if len(dll_files) > 0:
                                         for i in range(len(dll_files)):
                                             file_selected = dll_index == i
@@ -1220,7 +1253,7 @@ def OnDraw():
                                         gui.tooltip("Inject custom DLL into GTA5.exe")
                         ImGui.end_tab_item()
 
-                    if ImGui.begin_tab_item(f"  {Icons.Code}  Lua Scripts  ").selected:
+                    if ImGui.begin_tab_item(f" {Icons.Code} Lua Scripts ").selected:
                         git_logged_in = utils.read_cfg_item(
                             CONFIG_PATH, "git_logged_in"
                         )
@@ -1257,6 +1290,8 @@ def OnDraw():
                                     utils.save_cfg_item(
                                         YIM_SETTINGS, "lua", yim_lua_settings
                                     )
+                            else:
+                                ImGui.text_disabled("Auto-Reload Lua Scripts")
 
                             if (
                                 lua_repos_thread
@@ -1284,19 +1319,18 @@ def OnDraw():
                                             repos[i].name
                                         ).x
                                         ImGui.same_line(spacing=400 - item_width - 135)
+                                        script_has_update = lua_script_has_update(
+                                            repos[i].name, updatable_luas
+                                        )
                                         ImGui.text_colored(
                                             Icons.Down,
                                             0.0,
                                             0.588,
                                             1.0,
-                                            (
-                                                0.7
-                                                if lua_script_has_update(
-                                                    repos[i].name, updatable_luas
-                                                )
-                                                else 0.0
-                                            ),
+                                            (0.7 if script_has_update else 0.0),
                                         )
+                                        if script_has_update:
+                                            gui.tooltip("Update available.", small_font)
                                         ImGui.same_line(spacing=20)
                                         if utils.is_repo_starred(
                                             repos[i].name, starred_luas
@@ -1307,7 +1341,7 @@ def OnDraw():
                                         ImGui.same_line()
                                         with ImGui.font(small_font):
                                             ImGui.text(str(repos[i].stargazers_count))
-                                    selected_repo = repos[repo_index]
+                                    selected_repo: Repository = repos[repo_index]
                                 ImGui.separator()
                                 ImGui.dummy(1, 5)
                                 if not utils.is_script_installed(
@@ -1330,7 +1364,7 @@ def OnDraw():
                                         "Are you sure?",
                                         title_font,
                                         1,
-                                        utils.delete_item,
+                                        utils.delete_folder,
                                         os.path.join(
                                             YIM_SCRIPTS_PATH, selected_repo.name
                                         ),
@@ -1492,6 +1526,15 @@ def OnDraw():
                                             ImGreen,
                                             3,
                                         )
+                                        if avatar_texture == 0:
+                                            if not os.path.exists(AVATAR_PATH):
+                                                GitOAuth.save_avatar(git_username)
+                                            avatar_texture, _, _ = gui.draw_image(
+                                                AVATAR_PATH
+                                            )
+                                            gui.gl.glBindTexture(
+                                                gui.gl.GL_TEXTURE_2D, avatar_texture
+                                            )
                                         if len(repos) > 0:
                                             repos_checked = False
                                     if utils.stringContains(
@@ -1506,8 +1549,11 @@ def OnDraw():
                                         git_login_active = False
 
                             else:
-                                ImGui.text(f"{Icons.User} Logged in as: {git_username}")
-                                ImGui.dummy(1, 5)
+                                if avatar_texture != 0 and gui.gl.glIsTexture(
+                                    avatar_texture
+                                ):
+                                    gui.image_rounded(avatar_texture, 80)
+                                ImGui.text(f"{Icons.User} {git_username}")
                                 if ImGui.button(f"{Icons.Close} Logout"):
                                     GitOAuth.logout()
                                     run_task_status_update(
@@ -1515,6 +1561,7 @@ def OnDraw():
                                     )
                                     git_username = ""
                                     git_logged_in = False
+                                    avatar_texture = 0
                                     ImGui.open_popup("git_diconnect")
                             gui.message_box(
                                 "git_diconnect",
@@ -1556,7 +1603,7 @@ def OnDraw():
         gui.clickable_icon(
             Icons.Extern_Link,
             small_font,
-            "Click to visit YimMenu's unknowncheast thread",
+            "Click to visit YimMenu's unknowncheats thread",
             utils.visit_url,
             "https://www.unknowncheats.me/forum/grand-theft-auto-v/476972-yimmenu-1-69-b3351.html",
         )
@@ -1572,7 +1619,7 @@ def OnDraw():
         gui.clickable_icon(
             Icons.Extern_Link,
             small_font,
-            "Click to visit FSL's unknowncheast thread",
+            "Click to visit FSL's unknowncheats thread",
             utils.visit_url,
             "https://www.unknowncheats.me/forum/grand-theft-auto-v/616977-fsl-local-gtao-saves.html",
         )
@@ -1600,6 +1647,7 @@ def OnDraw():
         if git_login_thread and not git_login_thread.done():
             GitOAuth.abort()
         threadpool.shutdown()
+    gui.gl.glDeleteTextures([avatar_texture])
     impl.shutdown()
     gui.glfw.terminate()
 
