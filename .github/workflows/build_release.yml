@@ -27,9 +27,6 @@ jobs:
         with:
           python-version: "3.12.1"
 
-      # - name: Crate Build Environment
-      #   run: echo PATH=${GITHUB_WORKSPACE}/.venv/bin:$PATH >> $GITHUB_ENV
-      
       - name: Get Version Number
         id: get_version
         uses: actions/github-script@v7
