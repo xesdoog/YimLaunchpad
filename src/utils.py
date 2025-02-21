@@ -841,15 +841,20 @@ def get_lua_repos():
         "yimlls",
     }
 
-    if AUTH_TOKEN:
-        git = Github(AUTH_TOKEN)
-        user = git.get_user()
-        LOG.info(f"User is logged in to GitHub as {user.login} ({user.name})")
-    else:
+    if not AUTH_TOKEN:
         git = Github()
         LOG.info(
             "User is not logged in to GitHub. Sending non-authenticated requests..."
         )
+
+    try:
+        GitHubOAuth().login()
+        git = Github(AUTH_TOKEN)
+        user = git.get_user()
+        LOG.info(f"User is logged in to GitHub as {user.login} ({user.name})")
+    except Exception:
+        git = Github()
+        AUTH_TOKEN = None
 
     rate_limit, _ = git.rate_limiting
     LOG.info(f"Current API rate limit is {rate_limit} requests/hour.")

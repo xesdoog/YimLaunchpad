@@ -761,7 +761,6 @@ def background_thread():
         LOG.critical(
             f"An error occured while trying to find the game's process. Traceback: {e}"
         )
-    check_saved_dlls()
 
 
 def run_background_thread():
@@ -930,6 +929,7 @@ def OnDraw():
     global launchpad_console
 
     custom_dlls = utils.read_cfg_item(CONFIG_PATH, "custom_dlls")
+    dll_files = utils.read_cfg_item(CONFIG_PATH, "dll_files")
     git_logged_in = utils.read_cfg_item(CONFIG_PATH, "git_logged_in")
     git_username = utils.read_cfg_item(CONFIG_PATH, "git_username")
     yim_debug_settings = utils.read_cfg_item(YIM_SETTINGS, "debug")
@@ -1202,9 +1202,6 @@ def OnDraw():
                                 with ImGui.begin_child("##dll_list", 330, 160, True):
                                     ImGui.text(f"{Icons.List}  DLL List:")
                                     ImGui.separator()
-                                    dll_files = utils.read_cfg_item(
-                                        CONFIG_PATH, "dll_files"
-                                    )
                                     if len(dll_files) > 0:
                                         for i in range(len(dll_files)):
                                             file_selected = dll_index == i
@@ -1247,9 +1244,20 @@ def OnDraw():
                                         gui.tooltip("Remove custom DLL.")
                                     if game_is_running:
                                         if ImGui.button(Icons.Rocket):
-                                            run_inject_thread(
-                                                selected_dll["path"], process_id
-                                            )
+                                            if os.path.exists(selected_dll["path"]):
+                                                run_inject_thread(
+                                                    selected_dll["path"], process_id
+                                                )
+                                            else:
+                                                run_task_status_update(
+                                                    f"File not found: {selected_dll["path"]}.",
+                                                    ImRed,
+                                                    5,
+                                                )
+                                                dll_files.remove(selected_dll)
+                                                utils.save_cfg_item(
+                                                    CONFIG_PATH, "dll_files", dll_files
+                                                )
                                         gui.tooltip("Inject custom DLL into GTA5.exe")
                         ImGui.end_tab_item()
 
