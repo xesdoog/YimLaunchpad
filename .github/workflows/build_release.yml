@@ -16,7 +16,6 @@ jobs:
       full_sha: ${{ steps.var.outputs.full_sha }}
       new_tag: ${{ steps.get_version.outputs.new_tag }}
       ffi_tag: ${{ steps.get_version.outputs.ffi_tag }}
-      changelog_body: ${{ steps.write_changelog.outputs.changelog_body }}
 
     steps:
       - name: Checkout Repo
@@ -119,20 +118,6 @@ jobs:
           )
           "@
         shell: pwsh
-      
-      - name: Write Changelog
-        id: write_changelog
-        run: |
-            $commitMessage = git log -1 --pretty=format:"%s"
-            $commitBody = git log -1 --pretty=format:"%b"
-            @"
-            changelog_body<<EOF
-            $commitMessage
-
-            $commitBody
-            EOF
-            "@ | Out-File -FilePath $env:GITHUB_ENV -Append
-        shell: pwsh
 
       - name: Install dependencies
         run: |
@@ -174,6 +159,25 @@ jobs:
     name: Create Release
     needs: build
     steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Write Changelog
+        id: write_changelog
+        run: |
+            commitMessage=$(git log -1 --pretty=format:"%s")
+            commitBody=$(git log -1 --pretty=format:"%b")
+            echo "Commit Message: $commitMessage"
+            echo "Commit Body: $commitBody"
+            {
+              echo "changelog_body<<EOF"
+              echo "$commitMessage"
+              echo ""
+              echo "$commitBody"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
+        shell: bash
+
       - name: Download Artifact
         uses: actions/download-artifact@v4
         with:
@@ -188,8 +192,6 @@ jobs:
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
-        env:
-          changelog_body: ${{ env.changelog_body }}
         with:
           name: YimLaunchpad ${{ needs.build.outputs.new_tag }}
           tag_name: ${{ needs.build.outputs.new_tag }}
