@@ -25,10 +25,10 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.12.1"
 
-      - name: Crate Build Environment
-        run: echo PATH=${GITHUB_WORKSPACE}/.venv/bin:$PATH >> $GITHUB_ENV
+      # - name: Crate Build Environment
+      #   run: echo PATH=${GITHUB_WORKSPACE}/.venv/bin:$PATH >> $GITHUB_ENV
       
       - name: Get Version Number
         id: get_version
@@ -134,7 +134,7 @@ jobs:
 
             $commitBody
             EOF
-            "@ | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "@ | Out-File -FilePath $env:GITHUB_ENV -Append
         shell: pwsh
 
       - name: Install dependencies
@@ -191,6 +191,8 @@ jobs:
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
+        env:
+          changelog_body: ${{ env.changelog_body }}
         with:
           name: YimLaunchpad ${{ needs.build.outputs.new_tag }}
           tag_name: ${{ needs.build.outputs.new_tag }}
@@ -204,6 +206,6 @@ jobs:
                     ${{ steps.build_sha.outputs.build_sha }}
               
               ### v${{ needs.build.outputs.new_tag }} Changelog
-              #### ${{ needs.build.outputs.changelog_body }}
+              ${{ env.changelog_body }}
           files: |
             YimLaunchpad.exe
