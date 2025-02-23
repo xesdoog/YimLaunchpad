@@ -1,0 +1,27 @@
+name: Improvement request
+description: Improve an existing feature in YimLaunchpad.
+title: "[Improvement]: "
+labels: improvement
+body:
+- type: textarea
+  attributes:
+    label: Which feature
+    description: A clear description of which feature you want to see improved and what you'd like to be changed about it.
+  validations:
+    required: false
+- type: textarea
+  attributes:
+    label: Reason
+    description: Provide Reasoning
+    placeholder: Tell us why you want us to improve this feature
+  validations:
+    required: true
+- type: textarea
+  attributes:
+    label: Additional context
+    description: |
+      Add any other context about the request here.
+      
+      Tip: You can attach images or log files by dragging and dropping them here.
+  validations:
+    required: false

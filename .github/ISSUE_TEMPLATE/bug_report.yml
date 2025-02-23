@@ -1,0 +1,83 @@
+name: Bug report
+description: Create a bug report to help us improve.
+title: "[Bug]: "
+labels: bug
+body:
+- type: textarea
+  attributes:
+    label: Describe the bug
+    description: A clear and concise description of what the bug is.
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Steps To Reproduce
+    description: Steps to reproduce the behavior.
+    placeholder: |
+      1. Go to '...'
+      2. Click on '...'
+      3. Scroll down to '...'
+      4. See error
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Expected behavior
+    description: A clear and concise description of what you expected to happen.
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Log
+    description: |
+      For a bug report to be valid, you need to include the launchpad's log.
+      The log can be found under `%AppData\YimLaunchpad\yimlaunchapd.log`.
+
+      Tip: To easily upload your log file, you can change the file extension from `.log` to `.txt` and drop it here or zip it then drag and drop it here. Alternatively, you can just open it and copy/paste its contents here *(not recommended)*.
+    value: |
+      <!-- Place your log here -->
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Screenshots / Video
+    description: |
+      If you think the issue can be better explained with screenshots or video captures, consider adding them here.
+
+      Tip: You can attach images by dragging files and dropping them here.
+    value: |
+      <!-- drag and drop your images or video(s) here -->
+  validations:
+    required: false
+
+- type: dropdown
+  attributes:
+    label: Store
+    description: Which launcher is your game on? Pirated versions are not supported.
+    multiple: false
+    options:
+      - Epic Games
+      - Rockstar Games
+      - Steam
+      - Other (please mention in "Additional context")
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Additional context
+    description: Add any other context about the problem here.
+  validations:
+    required: false
+
+- type: checkboxes
+  attributes:
+    label: Version
+    description: We want to confirm that this issue exists on the latest version of YimLaunchpad. Not on a fork or a custom version.
+    options:
+      - label: I've confirmed the issue exists on the latest version of YimLaunchpad.
+        required: true
