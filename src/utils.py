@@ -131,19 +131,25 @@ def executable_dir():
 def read_cfg(file):
     if os.path.exists(file):
         with open(file, "r") as f:
-            data = json.load(f)
-            f.close()
-            return data
+            try:
+                data = json.load(f)
+                f.close()
+                return data
+            except Exception:
+                return None
     return None
 
 
 def read_cfg_item(file, item_name):
     if os.path.exists(file):
         with open(file, "r") as f:
-            data = json.load(f)
-            if item_name in data:
-                f.close()
-                return data[item_name]
+            try:
+                data = json.load(f)
+                if item_name in data:
+                    f.close()
+                    return data[item_name]
+            except Exception:
+                return None
     return None
 
 
@@ -241,22 +247,20 @@ class LOGGER:
         self.app_version = app_version
         self.logger = logging.getLogger("YLP")
         self.logger.addFilter(CustomLogFilter())
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.DEBUG)
         self.formatter = logging.Formatter(
             fmt="[%(asctime)s] [%(levelname)s] (%(caller_name)s): %(message)s",
             datefmt="%H:%M:%S",
         )
+
+        if self.logger.hasHandlers():
+            self.logger.handlers.clear()
+
         self.file_handler = CustomLogHandler(LOG_FILE)
-        self.file_handler.setLevel(logging.INFO)
+        self.file_handler.setLevel(logging.DEBUG)
         self.file_handler.setFormatter(self.formatter)
+        self.logger.addHandler(self.file_handler)
         self.console_handler = None
-        logging.basicConfig(
-            encoding="utf-8",
-            level=logging.INFO,
-            format="[%(asctime)s] [%(levelname)s] (%(caller_name)s): %(message)s",
-            datefmt="%H:%M:%S",
-            handlers=[self.file_handler],
-        )
 
     def show_console(self):
         if not kernel32.GetConsoleWindow():
@@ -266,7 +270,7 @@ class LOGGER:
             kernel32.SetConsoleTitleW("YimLaunchpad")
         if not self.console_handler:
             self.console_handler = logging.StreamHandler(sys.stdout)
-            self.console_handler.setLevel(logging.INFO)
+            self.console_handler.setLevel(logging.DEBUG)
             self.console_handler.setFormatter(self.formatter)
             self.logger.addHandler(self.console_handler)
             print(log_init_str(self.app_version))
@@ -304,10 +308,6 @@ class LOGGER:
 
 
 LOG = LOGGER()
-
-
-if read_cfg_item(CONFIG_PATH, "git_logged_in"):
-    AUTH_TOKEN = keyring.get_password("YLPGIT_ACC", "access_token")
 
 
 class GitHubOAuth:
@@ -356,12 +356,12 @@ class GitHubOAuth:
             self.update_status("Task failed!")
             return None
 
-    def store_tokens(self, access_token, refresh_token, expires_in=28800):
+    def save_tokens(self, access_token, refresh_token, expires_in=28800):
         keyring.set_password("YLPGIT_ACC", "access_token", access_token)
         keyring.set_password("YLPGIT_RFR", "refresh_token", refresh_token)
         keyring.set_password("YLPGIT_EXP", "token_expiry", str(time() + expires_in))
 
-    def get_stored_tokens(self):
+    def get_tokens(self):
         try:
             access_token = keyring.get_password("YLPGIT_ACC", "access_token")
             refresh_token = keyring.get_password("YLPGIT_RFR", "refresh_token")
@@ -369,6 +369,7 @@ class GitHubOAuth:
             return access_token, refresh_token, float(expiry) if expiry else None
         except Exception as e:
             LOG.error(e)
+            return None, None, None
 
     def delete_tokens(self):
         try:
@@ -456,13 +457,13 @@ class GitHubOAuth:
                     self.update_status("Login failed!")
                     return response
 
-            self.store_tokens(access_token, refresh_token)
+            self.save_tokens(access_token, refresh_token)
             LOG.info("Authorization granted.")
             return access_token
 
     @reset_abort
     def refresh_token(self):
-        _, refresh_token, _ = self.get_stored_tokens()
+        _, refresh_token, _ = self.get_tokens()
         if not refresh_token:
             LOG.warning("No refresh token found! User must reauthenticate.")
             save_cfg_item(CONFIG_PATH, "git_logged_in", False)
@@ -485,7 +486,7 @@ class GitHubOAuth:
 
         if token_data and "access_token" in token_data:
             LOG.info("Token refreshed successfully!")
-            self.store_tokens(token_data["access_token"], token_data["refresh_token"])
+            self.save_tokens(token_data["access_token"], token_data["refresh_token"])
             return token_data["access_token"]
 
         LOG.error("Failed to refresh token! User must reauthenticate.")
@@ -499,7 +500,7 @@ class GitHubOAuth:
     @reset_abort
     def login(self):
         global AUTH_TOKEN
-        access_token, _, expiry = self.get_stored_tokens()
+        access_token, _, expiry = self.get_tokens()
 
         if access_token and time() < expiry:
             LOG.info("Existing token is still valid.")
@@ -557,6 +558,9 @@ class GitHubOAuth:
         self.update_status(
             "Logged out. To fully revoke access, visit https://github.com/settings/apps/authorizations."
         )
+
+
+AUTH_TOKEN, _, _ = GitHubOAuth().get_tokens()
 
 
 class MemoryScanner:
@@ -827,6 +831,8 @@ def lua_script_needs_update(repo: Repository, installed: dict) -> bool:
 
 
 def get_lua_repos():
+    global AUTH_TOKEN
+
     LOG.info("Fetching repositories from https://github.com/YimMenu-Lua")
     user = None
     repos = []
@@ -834,7 +840,10 @@ def get_lua_repos():
     starred_repos = []
     installed = get_installed_scripts()
     exclude_repos = {
+        "Bunker-Research-Unlocker",
         "example",
+        "GTA-Prostitute-Spawner",
+        "hi",
         "submission",
         "samurai-scenarios",
         "samurai-animations",
@@ -856,11 +865,11 @@ def get_lua_repos():
         git = Github()
         AUTH_TOKEN = None
 
-    rate_limit, _ = git.rate_limiting
-    LOG.info(f"Current API rate limit is {rate_limit} requests/hour.")
+    requests_remaining, _ = git.rate_limiting
+    LOG.info(f"Current API rate limit is {requests_remaining} requests/hour.")
     try:
 
-        if rate_limit == 0:
+        if requests_remaining == 0:
             LOG.error("Failed to fetch GitHub repositories! Rate limit exceeded.")
             return [], [], [], True, 0
 
@@ -878,23 +887,23 @@ def get_lua_repos():
             else:
                 LOG.info(f"Skipping repository '{repo.name}'")
         LOG.info(f"Loaded {len(repos)} repositories.")
-        return repos, update_available, starred_repos, False, rate_limit
+        return repos, update_available, starred_repos, False, requests_remaining
 
-    except RateLimitExceededException:
+    except Exception:
         LOG.error("Failed to fetch GitHub repositories! Rate limit exceeded.")
         return [], [], [], True, 0
 
 
 def refresh_repository(repo: Repository):
     git = Github(AUTH_TOKEN)
-    rate_limit, _ = git.rate_limiting
+    requests_remaining, _ = git.rate_limiting
     try:
-        if rate_limit == 0:
+        if requests_remaining == 0:
             return repo, 0
 
         YimMenu_Lua = git.get_organization("YimMenu-Lua")
-        return YimMenu_Lua.get_repo(repo.name), rate_limit
-    except RateLimitExceededException:
+        return YimMenu_Lua.get_repo(repo.name), requests_remaining
+    except Exception:
         return repo, 0
 
 
@@ -1006,3 +1015,7 @@ def add_exclusion(paths: list):
     except Exception:
         LOG.error(f"Failed to add exclusions.")
         pass
+
+
+def is_thread_active(thread) -> bool:
+    return thread and not thread.done()

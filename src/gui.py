@@ -211,9 +211,10 @@ def colored_button(
     return retbool
 
 
-def busy_button(icon, label):
+def busy_button(icon, label=None):
+    button_label = f"{icon}  {label}" if label else f" {icon} "
     colored_button(
-        f"{icon}  {label}",
+        button_label,
         [0.501, 0.501, 0.501],
         [0.501, 0.501, 0.501],
         [0.501, 0.501, 0.501],

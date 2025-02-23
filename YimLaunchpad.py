@@ -7,7 +7,7 @@ from pathlib import Path
 from win32gui import FindWindow, SetForegroundWindow
 from src import utils, gui
 
-YLP_VERSION = "1.0.0.3"
+YLP_VERSION = "1.0.0.4"
 PARENT_PATH = Path(__file__).parent
 ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), "YimLaunchpad")
@@ -36,7 +36,6 @@ import subprocess
 import zipfile
 
 from concurrent.futures import ThreadPoolExecutor
-from github.Repository import Repository
 from imgui.integrations.glfw import GlfwRenderer
 from pyinjector import inject
 from threading import Thread
@@ -46,6 +45,7 @@ from time import sleep
 Icons = gui.Icons
 MemoryScanner = utils.MemoryScanner()
 ImGui = gui.imgui
+Repository = utils.Repository
 threadpool = ThreadPoolExecutor(max_workers=3)
 progress_value = 0
 process_id = 0
@@ -73,6 +73,7 @@ lua_repos_thread = None
 lua_downl_thread = None
 busy_icon_thread = None
 git_login_thread = None
+refresh_repo_thread = None
 defender_exclusions_thead = None
 status_updt_task = None
 task_status_col = None
@@ -241,6 +242,7 @@ def get_status_widget_color():
     global lua_repos_thread
     global lua_downl_thread
     global git_login_thread
+    global refresh_repo_thread
     global defender_exclusions_thead
 
     if task_status != "":
@@ -261,6 +263,7 @@ def get_status_widget_color():
                 lua_repos_thread,
                 lua_downl_thread,
                 git_login_thread,
+                refresh_repo_thread,
                 defender_exclusions_thead,
             ):
                 if thread and not thread.done():
@@ -437,8 +440,9 @@ def yimlaunchapd_init():
         task_status = "Checking for YimLaunchpad updates..."
         check_for_ylp_update()
     task_status_col = None
-    task_status = "Checking for YimMenu updates..."
-    check_for_yim_update()
+    if os.path.exists(YIMDLL_FILE):
+        task_status = "Checking for YimMenu updates..."
+        check_for_yim_update()
     task_status = "Verifying YimLaunchpad config..."
     LOG.info("Verifying YimLaunchpad config...")
     check_saved_config()
@@ -658,14 +662,11 @@ def add_file_with_short_sha(file_path):
         dll_files.append({"name": file_name, "path": file_path})
         utils.save_cfg_item(CONFIG_PATH, "dll_files", dll_files)
         task_status = f"Added file {file_name} to the list of custom DLLs."
-        sleep(3)
-        task_status = ""
     except Exception:
         task_status_col = ImRed
         task_status = "An error occured! Check the log for more details."
-        sleep(3)
-        task_status_col = None
-        task_status = ""
+    sleep(3)
+    task_status = ""
 
 
 def run_file_add_thread(file_path):
@@ -703,9 +704,7 @@ def inject_dll(dll, process_id):
                     task_status = ""
                     if auto_exit:
                         for i in range(3):
-                            task_status = (
-                                f"YimLaunchpad will automatically exit in ({3 - i})"
-                            )
+                            task_status = f"YimLaunchpad will automatically exit in ({3 - i}) seconds."
                             sleep(1)
                         should_exit = True
                 else:
@@ -713,20 +712,24 @@ def inject_dll(dll, process_id):
                     task_status = "Uh Oh! Did your game crash?"
                     task_status_col = ImYellow
             else:
-                LOG.error("YimMenu.dll not found! Did the antivirus delete it?")
-                task_status = "YimMenu.dll not found! Download the latest release and make sure your anti-virus is not interfering."
+                LOG.error(
+                    f"Failed to inject DLL: {os.path.basename(dll)} was not found!"
+                )
+                task_status = (
+                    f"Failed to inject DLL: {os.path.basename(dll)} was not found!"
+                )
                 task_status_col = ImRed
         else:
-            LOG.warning("Injection failed! Process not found.")
-            task_status = "Process not found! Is the game running?"
             task_status_col = ImRed
+            LOG.warning("Injection failed! Process GTA5.exe was not found.")
+            task_status = "Process not found! Is the game running?"
     except Exception as e:
+        task_status_col = ImRed
         LOG.critical(f"An exception has occured! Traceback: {e}")
         task_status = "Injection failed! Check the log for more details."
-        task_status_col = ImRed
 
     if not should_exit:
-        sleep(5)
+        sleep(3)
         task_status = ""
         task_status_col = None
 
@@ -915,6 +918,33 @@ def run_lua_download(repo: Repository):
         pass
     else:
         lua_downl_thread = threadpool.submit(lua_download, repo)
+
+
+def repo_refresh_func(repo: Repository, index):
+    global task_status
+    global git_requests_left
+    global repos
+
+    task_status = f"Refreshing {repo.name}, please wait..."
+    refreshed_repo, requests_remaining = utils.refresh_repository(repo)
+    git_requests_left = requests_remaining
+    repos[index] = refreshed_repo
+    installed_scripts = utils.get_installed_scripts()
+    dummy_progress()
+    task_status = "Done."
+    if utils.lua_script_needs_update(refreshed_repo, installed_scripts):
+        gui.toast(f"An update is available for {refreshed_repo.name}")
+    sleep(1)
+    task_status = ""
+
+
+def run_repo_refresh_thread(repo: Repository, index):
+    global refresh_repo_thread
+
+    if refresh_repo_thread and not refresh_repo_thread.done():
+        pass
+    else:
+        refresh_repo_thread = threadpool.submit(repo_refresh_func, repo, index)
 
 
 def OnDraw():
@@ -1401,8 +1431,7 @@ def OnDraw():
                                                 ImYellow,
                                                 3,
                                             )
-                                    ImGui.same_line()
-                                if utils.is_script_disabled(selected_repo):
+                                elif utils.is_script_disabled(selected_repo):
                                     if ImGui.button(f"{Icons.Checkmark} Enable"):
                                         try:
                                             old_path = os.path.join(
@@ -1421,6 +1450,22 @@ def OnDraw():
                                                 ImYellow,
                                                 3,
                                             )
+                                ImGui.same_line()
+                                if (
+                                    utils.is_script_installed(selected_repo)
+                                    and not utils.is_script_disabled(selected_repo)
+                                    and not utils.is_thread_active(lua_downl_thread)
+                                    and not utils.is_thread_active(lua_repos_thread)
+                                ):
+                                    if not utils.is_thread_active(refresh_repo_thread):
+                                        if ImGui.button(f" {Icons.Refresh} "):
+                                            run_repo_refresh_thread(
+                                                selected_repo,
+                                                repo_index
+                                            )
+                                        gui.tooltip("Refresh repository")
+                                    else:
+                                        gui.busy_button(busy_icon)
                         ImGui.end_tab_item()
 
                     if ImGui.begin_tab_item(f"  {Icons.Gear}  Settings  ").selected:
@@ -1662,7 +1707,7 @@ def OnDraw():
 
 @atexit.register
 def OnExit():
-    LOG.info("Closing YimLaunchpad...\n\nFarewell!\n")
+    LOG.info("Closing YimLaunchpad...\n\nFarewell!")
 
 
 if __name__ == "__main__":
