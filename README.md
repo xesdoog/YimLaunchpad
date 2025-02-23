@@ -53,7 +53,7 @@ A launchpad for YimMenu.
 
 - [ ] Add themes.
 - [ ] Add automatic injection. *(if I can figure out a signature for the landing page)*
-- [ ] Refresh installed Lua scripts individually to check for updates. *(I've already written the function. I'm just too lazy to add a button that calls the damn function -_-)*
+- [x] Refresh installed Lua scripts individually to check for updates or update the repo's star count. *(I've already written the function. I'm just too lazy to add a button that calls the damn function -_-)*
 
 ###  
 
