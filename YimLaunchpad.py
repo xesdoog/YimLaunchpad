@@ -64,7 +64,7 @@ game_is_running = False
 is_menu_injected = False
 is_fsl_enabled = False
 game_state_checked = False
-can_auto_intect = False
+can_auto_inject = False
 window = None
 ylp_ver_thread = None
 ylp_down_thread = None
@@ -762,7 +762,7 @@ def background_thread():
     global is_fsl_enabled
     global should_exit
     global game_state_checked
-    global can_auto_intect
+    global can_auto_inject
     global glt_addr
     global gs_addr
 
@@ -781,7 +781,7 @@ def background_thread():
 
                 if gs_addr:
                     try:
-                        can_auto_intect = True
+                        can_auto_inject = True
                         lifetime = glt_addr.add(0x2).rip().get_dword()
                         gs = gs_addr.add(0x2).rip().add(0x1).get_byte()
                         if lifetime < 10000:
@@ -793,7 +793,7 @@ def background_thread():
                                 task_status_col = ImYellow
                                 task_status = "Too late to inject YimMenu! You can still manually inject it at your own risk."
                                 game_state_checked = True
-                                can_auto_intect = False
+                                can_auto_inject = False
 
                             if 0 < gs < 5:
                                 task_status_col = None
@@ -808,16 +808,16 @@ def background_thread():
                                     inject_dll(YIMDLL_FILE, process_id)
                                     is_menu_injected = True  # don't wait for the thread to find YimMenu's module
                                     game_state_checked = True
-                                    can_auto_intect = False
+                                    can_auto_inject = False
                     except Exception as e:
                         LOG.error(e)
                         game_state_checked = True
-                        can_auto_intect = False
+                        can_auto_inject = False
         else:
             is_menu_injected = False
             is_fsl_enabled = False
             game_state_checked = False
-            can_auto_intect = False
+            can_auto_inject = False
         sleep(1)
     except Exception as e:
         LOG.critical(
@@ -863,18 +863,18 @@ def start_gta(idx: int):
             subprocess.run("cmd /c start steam://run/271590", creationflags=0x8)
 
         sleep(3)
-        now = time()
-        timeout = now + 30
+        timeout = time() + 30
         task_status = "Waiting for the game to start..."
         while not game_is_running:
             sleep(0.1)
-            if timeout <= now:
+            if timeout <= time():
                 task_status = "Timed out while waiting for the game to start."
                 break
     except Exception as e:
         LOG.error(f"Failed to start the game: {e}")
         task_status_col = ImYellow
         task_status = f"Unable to start the game!"
+    sleep(1)
     task_status = ""
     task_status_col = None
 
@@ -1255,15 +1255,15 @@ def OnDraw():
                                 ImGui.dummy(1, 5)
                             if game_is_running:
                                 with gui.begin_disabled(
-                                    is_menu_injected or can_auto_intect
+                                    is_menu_injected or can_auto_inject
                                 ):
                                     if (
                                         ImGui.button(f"{Icons.Rocket}  Inject YimMenu")
                                         and not is_menu_injected
-                                        and not can_auto_intect
+                                        and not can_auto_inject
                                     ):
                                         run_inject_thread(YIMDLL_FILE, process_id)
-                                if is_menu_injected or can_auto_intect:
+                                if is_menu_injected or can_auto_inject:
                                     gui.tooltip(
                                         "YimMenu is already injected."
                                         if is_menu_injected
@@ -1594,7 +1594,7 @@ def OnDraw():
                                 "Automatically close YimLaunchpad after injecting a DLL."
                             )
                             ImGui.same_line(spacing=10)
-                            if not can_auto_intect:
+                            if not can_auto_inject:
                                 autoinject_clicked, auto_inject = ImGui.checkbox(
                                     "Auto-Inject", auto_inject
                                 )
