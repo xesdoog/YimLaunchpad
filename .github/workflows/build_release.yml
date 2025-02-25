@@ -139,7 +139,7 @@ jobs:
 
       - name: Build Executable
         run: |
-          pyinstaller "YimLaunchpad.py" --noconfirm --onefile --windowed --name "YimLaunchpad" --clean --version-file "./version.txt" --icon "./src/assets/img/ylp_icon.ico" --splash "./src/assets/img/ylp_splash.png" --add-data "./src;src/" --add-binary "./src/assets/dll/glfw3.dll;." --add-binary "./src/assets/dll/msvcr110.dll;." --upx-dir "./upx" --upx-exclude "vcruntime140.dll" --hidden-import=winsdk --hidden-import=pymem
+          pyinstaller "YimLaunchpad.py" --noconfirm --onefile --windowed --name "YimLaunchpad" --clean --version-file "./version.txt" --icon "./src/assets/img/ylp_icon.ico" --splash "./src/assets/img/ylp_splash.png" --add-data "./src;src/" --add-binary "./src/assets/dll/glfw3.dll;." --add-binary "./src/assets/dll/msvcr110.dll;." --upx-dir "./upx" --upx-exclude "vcruntime140.dll" --hidden-import=winsdk
 
       - name: Generate Build Info
         id: var
