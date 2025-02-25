@@ -54,15 +54,11 @@ A launchpad for YimMenu.
 - Enable/Disable YimLaunchpad's `Debug Console`.
 - Login/logout to/from GitHub.
 
-###  
-
 ## TODO
 
 - [ ] Add themes. *meh*
 - [x] Add automatic injection. ✅
 - [x] Add a button to refresh installed Lua scripts individually. ✅
-
-###  
 
 ## Showcase
 
@@ -86,9 +82,31 @@ A launchpad for YimMenu.
 
 ![settings_1](https://github.com/user-attachments/assets/95038fea-a22d-4ee4-b955-41b9ebcb6899)
 
-###  
-
 ## Licenses
 
 - This program uses Google's Rokkit Regular font, licensed under [SIL Open Font License V1.1](https://openfontlicense.org/open-font-license-official-text/)
 - This program uses the free version of FontAwesome v4.7 also licensed under [SIL Open Font License V1.1](https://openfontlicense.org/open-font-license-official-text/)
+
+## Donations
+
+- I don't want your money. If you like the project, give it a star ⭐
+
+## Build It Yourself
+
+If you don't want to use the release executable built by GitHub Actions, you can build YimLaunchpad yourself if you have `Python >= 3.12.x` installed. It takes less than 2 minutes:
+- Fork the repo.
+- Open a terminal and cd to the repo's directory.
+- Install Pyinstaller:
+
+      pip install pyinstaller
+
+- Install Requirements:
+
+      pip install -r requirements.txt 
+
+- Download [UPX](https://github.com/upx/upx/releases) and note down where you saved it.
+- Once ready, run this command to build a portable executable:
+
+      pyinstaller "YimLaunchpad.py" --noconfirm --onefile --windowed --name "YimLaunchpad" --clean --icon "./src/assets/img/ylp_icon.ico" --splash "./src/assets/img/ylp_splash.png" --add-data "./src;src/" --add-binary "./src/assets/dll/glfw3.dll;." --add-binary "./src/assets/dll/msvcr110.dll;." --upx-dir "PATH_TO_WHERE_YOU_SAVED_UPX" --upx-exclude "vcruntime140.dll" --hidden-import=winsdk --hidden-import=pymem
+
+- Once the process completes, there will be a new folder in the project's root directory named `dist`. The executable can be found there.
