@@ -51,9 +51,9 @@ A launchpad for YimMenu.
 
 ## TODO
 
-- [ ] Add themes.
-- [ ] Add automatic injection. *(if I can figure out a signature for the landing page)*
-- [x] Refresh installed Lua scripts individually to check for updates or update the repo's star count. *(I've already written the function. I'm just too lazy to add a button that calls the damn function -_-)*
+- [ ] Add themes. *meh*
+- [x] Add automatic injection.
+- [x] Refresh installed Lua scripts individually to check for updates or update the selected repo's star count.
 
 ###  
 
@@ -77,8 +77,9 @@ A launchpad for YimMenu.
 
 ### Settings (With GitHub Auth)
 
-![settings_1](https://github.com/user-attachments/assets/e9c4472b-6af7-4838-9473-028ae7cb3e8c)
+![settings_1](https://github.com/user-attachments/assets/95038fea-a22d-4ee4-b955-41b9ebcb6899)
 
+###  
 
 ## Licenses
 

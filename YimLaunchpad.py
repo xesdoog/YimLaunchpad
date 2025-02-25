@@ -3,17 +3,21 @@ import os, sys
 if getattr(sys, "frozen", False):
     import pyi_splash  # type: ignore
 
+
 from pathlib import Path
 from win32gui import FindWindow, SetForegroundWindow
 from src import utils, gui
+from src.memory import Scanner, ptrn_gs, ptrn_glt
+from src.logger import LOGGER
 
-YLP_VERSION = "1.0.0.4"
+
+YLP_VERSION = "1.0.0.5"
 PARENT_PATH = Path(__file__).parent
 ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), "YimLaunchpad")
 AVATAR_PATH = os.path.join(LAUNCHPAD_PATH, "avatar.png")
 UPDATE_PATH = os.path.join(LAUNCHPAD_PATH, "update")
-LOG = utils.LOGGER(YLP_VERSION)
+LOG = LOGGER(YLP_VERSION)
 
 launchpad_window = FindWindow(None, "YimLaunchpad")
 if launchpad_window != 0:
@@ -39,11 +43,11 @@ from concurrent.futures import ThreadPoolExecutor
 from imgui.integrations.glfw import GlfwRenderer
 from pyinjector import inject
 from threading import Thread
-from time import sleep
+from time import sleep, time
 
 
 Icons = gui.Icons
-MemoryScanner = utils.MemoryScanner()
+Scanner = Scanner()
 ImGui = gui.imgui
 Repository = utils.Repository
 threadpool = ThreadPoolExecutor(max_workers=3)
@@ -59,6 +63,8 @@ yim_update_active = False
 game_is_running = False
 is_menu_injected = False
 is_fsl_enabled = False
+game_state_checked = False
+can_auto_intect = False
 window = None
 ylp_ver_thread = None
 ylp_down_thread = None
@@ -78,6 +84,8 @@ defender_exclusions_thead = None
 status_updt_task = None
 task_status_col = None
 ylp_remote_ver = None
+gs_addr = None
+glt_addr = None
 task_status = ""
 busy_icon = ""
 LAUNCHPAD_URL = "https://github.com/xesdoog/YimLaunchpad"
@@ -91,6 +99,7 @@ YIM_MENU_PATH = os.path.join(os.getenv("APPDATA"), "YimMenu")
 YIM_SCRIPTS_PATH = os.path.join(YIM_MENU_PATH, "scripts")
 YIM_SETTINGS = os.path.join(YIM_MENU_PATH, "settings.json")
 auto_exit = utils.read_cfg_item(CONFIG_PATH, "auto_exit_after_injection")
+auto_inject = utils.read_cfg_item(CONFIG_PATH, "auto_inject")
 launchpad_console = utils.read_cfg_item(CONFIG_PATH, "launchpad_console")
 GitOAuth = utils.GitHubOAuth()
 updatable_luas = []
@@ -136,7 +145,6 @@ default_cfg = {
     "auto_exit_after_injection": False,
     "launchpad_console": False,
     "auto_inject": False,
-    "auto_inject_delay": 0,
     "git_logged_in": False,
     "git_username": "",
     "dll_files": [],
@@ -666,6 +674,7 @@ def add_file_with_short_sha(file_path):
         task_status_col = ImRed
         task_status = "An error occured! Check the log for more details."
     sleep(3)
+    task_status_col = None
     task_status = ""
 
 
@@ -681,6 +690,7 @@ def inject_dll(dll, process_id):
     global task_status
     global task_status_col
     global game_is_running
+    global auto_inject
     global auto_exit
     global should_exit
 
@@ -691,7 +701,7 @@ def inject_dll(dll, process_id):
                 libHanlde = inject(process_id, dll)
                 task_status = f"Injecting {os.path.basename(dll)} into GTA5.exe..."
                 LOG.info(f"Injecting {dll} into GTA5.exe...")
-                LOG.debug(f"Injected library handle: {libHanlde}")
+                LOG.debug(f"Injected library handle: 0x{libHanlde:X}")
                 dummy_progress()
                 sleep(1)
                 task_status = "Checking if the game is still running after injection..."
@@ -736,6 +746,7 @@ def inject_dll(dll, process_id):
 
 def run_inject_thread(path, process):
     global inject_thread
+
     if inject_thread and not inject_thread.done():
         pass
     else:
@@ -743,22 +754,70 @@ def run_inject_thread(path, process):
 
 
 def background_thread():
+    global task_status
+    global task_status_col
     global process_id
     global game_is_running
     global is_menu_injected
     global is_fsl_enabled
     global should_exit
+    global game_state_checked
+    global can_auto_intect
+    global glt_addr
+    global gs_addr
 
     try:
-        MemoryScanner.find_process("GTA5.exe", 0.01)
-        game_is_running = MemoryScanner.is_process_running()
+        Scanner.find_process("GTA5.exe", 0.01)
+        game_is_running = Scanner.is_process_running()
         if game_is_running:
-            process_id = MemoryScanner.pid
-            is_menu_injected = MemoryScanner.is_module_loaded("YimMenu.dll")
-            is_fsl_enabled = MemoryScanner.is_module_loaded("version.dll")
+            process_id = Scanner.pid
+            is_menu_injected = Scanner.is_module_loaded("YimMenu.dll")
+            is_fsl_enabled = Scanner.is_module_loaded("version.dll")
+            if auto_inject and not is_menu_injected and not game_state_checked:
+                if not glt_addr:
+                    glt_addr = Scanner.find_pattern(ptrn_glt)
+                if not gs_addr:
+                    gs_addr = Scanner.find_pattern(ptrn_gs)
+
+                if gs_addr:
+                    try:
+                        can_auto_intect = True
+                        lifetime = glt_addr.add(0x2).rip().get_dword()
+                        gs = gs_addr.add(0x2).rip().add(0x1).get_byte()
+                        if lifetime < 10000:
+                            task_status_col = None
+                            task_status = "Auto-Inject: Waiting for the game to load..."
+                            sleep(1)
+                        else:
+                            if gs == 0 or gs > 5:
+                                task_status_col = ImYellow
+                                task_status = "Too late to inject YimMenu! You can still manually inject it at your own risk."
+                                game_state_checked = True
+                                can_auto_intect = False
+
+                            if 0 < gs < 5:
+                                task_status_col = None
+                                task_status = "Auto-Inject: Waiting for the landing page..."
+                                sleep(0.5)
+                            elif gs == 5:
+                                task_status_col = None
+                                for i in range(3):
+                                    task_status = f"YimMenu will be automatically injected in ({3 - i})"
+                                    sleep(1)
+                                if not is_menu_injected and gs == 5:
+                                    inject_dll(YIMDLL_FILE, process_id)
+                                    is_menu_injected = True  # don't wait for the thread to find YimMenu's module
+                                    game_state_checked = True
+                                    can_auto_intect = False
+                    except Exception as e:
+                        LOG.error(e)
+                        game_state_checked = True
+                        can_auto_intect = False
         else:
             is_menu_injected = False
             is_fsl_enabled = False
+            game_state_checked = False
+            can_auto_intect = False
         sleep(1)
     except Exception as e:
         LOG.critical(
@@ -778,10 +837,7 @@ def start_gta(idx: int):
     global task_status, task_status_col
 
     try:
-        if idx == 0:
-            task_status = "Please select your lancher from the dropdown list!"
-            task_status_col = ImYellow
-        elif idx == 1:
+        if idx == 1:
             task_status = (
                 "Attempting to launch GTA V though Epic Games Launcher, please wait..."
             )
@@ -805,15 +861,22 @@ def start_gta(idx: int):
         elif idx == 3:
             task_status = "Attempting to launch GTA V though Steam, please wait..."
             subprocess.run("cmd /c start steam://run/271590", creationflags=0x8)
-        sleep(10)
-        task_status = ""
-        task_status_col = None
+
+        sleep(3)
+        now = time()
+        timeout = now + 30
+        task_status = "Waiting for the game to start..."
+        while not game_is_running:
+            sleep(0.1)
+            if timeout <= now:
+                task_status = "Timed out while waiting for the game to start."
+                break
     except Exception as e:
-        task_status = f"Failed to find GTA V executable!"
-        task_status_col = ImRed
-        sleep(5)
-        task_status = ""
-        task_status_col = None
+        LOG.error(f"Failed to start the game: {e}")
+        task_status_col = ImYellow
+        task_status = f"Unable to start the game!"
+    task_status = ""
+    task_status_col = None
 
 
 def run_launch_thread(idx: int):
@@ -894,6 +957,7 @@ def lua_download_release(repo: Repository):
                         task_status_col = None
                         task_status = ""
                         return False
+
                     return True
     return False
 
@@ -920,7 +984,7 @@ def run_lua_download(repo: Repository):
         lua_downl_thread = threadpool.submit(lua_download, repo)
 
 
-def repo_refresh_func(repo: Repository, index):
+def repo_refresh_func(repo: Repository, index: int):
     global task_status
     global git_requests_left
     global repos
@@ -938,7 +1002,7 @@ def repo_refresh_func(repo: Repository, index):
     task_status = ""
 
 
-def run_repo_refresh_thread(repo: Repository, index):
+def run_repo_refresh_thread(repo: Repository, index: int):
     global refresh_repo_thread
 
     if refresh_repo_thread and not refresh_repo_thread.done():
@@ -955,6 +1019,7 @@ def OnDraw():
     global game_is_running
     global repos
     global updatable_luas
+    global auto_inject
     global auto_exit
     global launchpad_console
 
@@ -981,9 +1046,10 @@ def OnDraw():
     git_login_active = False
     selected_dll = []
     selected_repo = []
+    username_alpha = 0.7
 
     ImGui.create_context()
-    window, _ = gui.new_window("YimLaunchpad", 400, 555, False)
+    window, hand_cursor = gui.new_window("YimLaunchpad", 400, 555, False)
     impl = GlfwRenderer(window)
     font_scaling_factor = gui.fb_to_window_factor(window)
     io = ImGui.get_io()
@@ -1188,14 +1254,21 @@ def OnDraw():
                                 )
                                 ImGui.dummy(1, 5)
                             if game_is_running:
-                                with gui.begin_disabled(is_menu_injected):
+                                with gui.begin_disabled(
+                                    is_menu_injected or can_auto_intect
+                                ):
                                     if (
                                         ImGui.button(f"{Icons.Rocket}  Inject YimMenu")
                                         and not is_menu_injected
+                                        and not can_auto_intect
                                     ):
                                         run_inject_thread(YIMDLL_FILE, process_id)
-                                if is_menu_injected:
-                                    gui.tooltip("YimMenu is already injected.")
+                                if is_menu_injected or can_auto_intect:
+                                    gui.tooltip(
+                                        "YimMenu is already injected."
+                                        if is_menu_injected
+                                        else "Auto-Inject is enabled. You can not manually inject YimMenu until the Auto-Inject checks are completed."
+                                    )
                                 else:
                                     ImGui.same_line()
                                     dc_clicked, yim_debug_console = ImGui.checkbox(
@@ -1212,13 +1285,19 @@ def OnDraw():
                                             YIM_SETTINGS, "debug", yim_debug_settings
                                         )
                             else:
-                                ImGui.set_next_item_width(200)
-                                _, launcher_index = ImGui.combo(
-                                    "##launchers", launcher_index, LAUNCHERS
-                                )
-                                ImGui.same_line()
-                                if ImGui.button(f" {Icons.Play}  Run "):
-                                    run_launch_thread(launcher_index)
+                                if launch_thread and not launch_thread.done():
+                                    gui.busy_button(busy_icon, "Please Wait...")
+                                else:
+                                    ImGui.set_next_item_width(200)
+                                    _, launcher_index = ImGui.combo(
+                                        "##launchers", launcher_index, LAUNCHERS
+                                    )
+                                    ImGui.same_line()
+                                    if ImGui.button(f" {Icons.Play}  Run "):
+                                        if launcher_index == 0:
+                                            run_task_status_update("Please select a launcher from the list!", ImYellow, 2)
+                                        else:
+                                            run_launch_thread(launcher_index)
 
                             ImGui.dummy(1, 5)
                             cdll_clicked, custom_dlls = ImGui.checkbox(
@@ -1460,8 +1539,7 @@ def OnDraw():
                                     if not utils.is_thread_active(refresh_repo_thread):
                                         if ImGui.button(f" {Icons.Refresh} "):
                                             run_repo_refresh_thread(
-                                                selected_repo,
-                                                repo_index
+                                                selected_repo, repo_index
                                             )
                                         gui.tooltip("Refresh repository")
                                     else:
@@ -1515,12 +1593,25 @@ def OnDraw():
                             gui.tooltip(
                                 "Automatically close YimLaunchpad after injecting a DLL."
                             )
-                            ImGui.same_line(spacing=20)
-                            clicked, launchpad_console = ImGui.checkbox(
-                                "Debug Console", launchpad_console
+                            ImGui.same_line(spacing=10)
+                            if not can_auto_intect:
+                                autoinject_clicked, auto_inject = ImGui.checkbox(
+                                    "Auto-Inject", auto_inject
+                                )
+                                gui.tooltip("Automatically detects the loading stage of the game and if it's in the landing page, auto-injects YimMenu.")
+                                if autoinject_clicked:
+                                    utils.save_cfg_item(
+                                        CONFIG_PATH, "auto_inject", auto_inject
+                                    )
+                            else:
+                                ImGui.text_disabled(f"{Icons.Close}  Auto-Inject")
+                                gui.tooltip("This option can not be interacted with until the Auto-Inject checks are completed.")
+                            ImGui.same_line(spacing=10)
+                            ylpcon_clicked, launchpad_console = ImGui.checkbox(
+                                "Console", launchpad_console
                             )
-                            gui.tooltip("Enable/Disable YimLaunchpad's debug console.")
-                            if clicked:
+                            gui.tooltip(f"{launchpad_console and "Disable" or "Enable"} YimLaunchpad's debug console.")
+                            if ylpcon_clicked:
                                 utils.save_cfg_item(
                                     CONFIG_PATH, "launchpad_console", launchpad_console
                                 )
@@ -1606,7 +1697,16 @@ def OnDraw():
                                     avatar_texture
                                 ):
                                     gui.image_rounded(avatar_texture, 80)
+                                ImGui.push_style_var(ImGui.STYLE_ALPHA, username_alpha)
                                 ImGui.text(f"{Icons.User} {git_username}")
+                                ImGui.pop_style_var()
+                                if ImGui.is_item_hovered():
+                                    gui.tooltip(f"{Icons.Extern_Link} Open in browser")
+                                    username_alpha = 1.0
+                                    if ImGui.is_item_clicked(0):
+                                        utils.visit_url(f"https://github.com/{git_username}")
+                                else:
+                                    username_alpha = 0.7
                                 if ImGui.button(f"{Icons.Close} Logout"):
                                     GitOAuth.logout()
                                     run_task_status_update(

@@ -172,7 +172,7 @@ def new_window(
     pos_y = vidMode.size.height
 
     window = glfw.create_window(int(width), int(height), title, None, None)
-    ibeam_cursor = glfw.create_standard_cursor(glfw.IBEAM_CURSOR)
+    hand_cursor = glfw.create_standard_cursor(glfw.POINTING_HAND_CURSOR)
     icon = Image.open(res_path("img/ylp_icon.ico"))
     icon = icon.convert("RGBA")
     icon_data = np.array(icon, dtype=np.uint8)
@@ -185,15 +185,21 @@ def new_window(
         glfw.terminate()
         raise Exception("Failed to initialize window!")
 
-    return window, ibeam_cursor
-
-
-def set_cursor(window: object, cursor: object):
-    glfw.set_cursor(window, cursor)
+    return window, hand_cursor
 
 
 def set_window_size(window: object, width: int, height: int):
     return glfw.set_window_size(window, width, height)
+
+
+def set_cursor(window: object, cursor: object):
+    if imgui.is_item_hovered():
+        glfw.set_cursor(window, cursor)
+
+
+def reset_cursor(window: object):
+    if not imgui.is_any_item_hovered():
+        glfw.set_cursor(window, None)
 
 
 def colored_button(
