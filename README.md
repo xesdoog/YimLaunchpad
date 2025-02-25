@@ -5,10 +5,9 @@ A launchpad for YimMenu.
 
 ###  
 
+
 > [!WARNING]
-> Avoid spamming the Lua Scripts tab *(refreshing the list multiple times, closing and relaunching the app, etc...)*. The GitHub API has a rate limit for non-authenticated requests and will put you on a timeout if you exceed that limit.
->
-> If you want to increase the limit to 5k requests, you have the option to login to GitHub through YimLaunchpad using a device code.
+> This program was written for educational purposes only. Use at your own risk.
 
 ###  
 
@@ -17,34 +16,42 @@ A launchpad for YimMenu.
 ### YimMemu & Other DLLs
 
 - Download YimMenu.
-- Keep it updated (auto-checks for updates on launch and sends toast notifications).
-- Enable/Disable YimMenu's debug console. **(Do not change it if the menu is already injected)**
-- Add custom DLLs.
+- Keep it updated: Automatically checks for updates on launch and sends toast notifications. *(you can also manually check for updates at any time)*.
+- Enable/Disable YimMenu's debug console.
 - Start the game.
-- Inject DLLs into the game's process.
+- Inject YimMenu into the game's process.
+- Auto-Inject YimMenu without having to worry about the perfect injection delay: YimLaunchpad will only auto-inject when the game is in the landing page.
+- Add custom DLLs.
+- Inject custom DLLs into the game's process.
 - Auto-Exit after injecting any DLL.
-- Checks modules loaded by the game to determine if YimMenu and FSL are loaded.
+- Scans modules loaded by the game to determine if YimMenu and FSL are loaded.
 
 ### Lua Scripts
 
-- Download Lua scripts from [YimMenu-Lua](https://github.com/YimMenu-Lua)
+- Download Lua scripts from [YimMenu-Lua](https://github.com/YimMenu-Lua).
 - Enable/Disable scripts.
 - Delete scripts.
-- Enable/Disable auto-reloading of Lua scripts **(Same as the option in YimMenu. Do not change it if the menu is already injected)**
-- Auto-detects script updates when fetching repositories and sends toast notifications.
+- Enable/Disable auto-reloading of Lua scripts.
+- Keep your Lua scripts updated: Automatically checks for script updates when fetching repositories and sends toast notifications. *(You can also manually check individual repositories that you have installed)*.
 
 > [!IMPORTANT]
 > To benefit from the Lua Scripts features, you have to download the scripts using the launcher. The reason for that is simply because YimLaunchpad organizes your scripts into folders named after the script's GitHub repository. This allows it to track your enabled/disabled scripts, check the last time a script was updated and compare it to the repository, etc...
 >
 > Loose files and folders named anything other than the script's repository name will not be recognized as installed scripts.
 
+> [!IMPORTANT]
+> If you're not authenticated, avoid spamming the Lua Scripts tab *(refreshing multiple times, repeatedly closing and relaunching the app, etc...)*. The GitHub API has a rate limit of 60 request per hour for unauthenticated requests and will put you on a timeout if you exceed that limit. More info on API rate limits can be found [here](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api?apiVersion=2022-11-28).
+>
+> If you want to increase the limit to 5000 requests per hour, you have the option to login to GitHub through YimLaunchpad using a device code. No email or password is required.
+
 ### Settings
 
-- Manually check for updates and update the launchpad.
-- Open the launchpad's folder which is located in `%AppData%\YimLaunchpad`.
+- Update the launchpad.
+- Open the launchpad's folder. *(located under `%AppData%\YimLaunchpad`)*.
 - Add `YimLaunchpad.exe` and its parent folder to Windows Defender exclusions using Windows Powershell™.
-- Enable/disable `Auto-Exit`.
-- Enable/Disable YimLaunchpad's debug console.
+- Enable/Disable `Auto-Exit`.
+- Enable/Disable `Auto-Inject`.
+- Enable/Disable YimLaunchpad's `Debug Console`.
 - Login/logout to/from GitHub.
 
 ###  
@@ -52,8 +59,8 @@ A launchpad for YimMenu.
 ## TODO
 
 - [ ] Add themes. *meh*
-- [x] Add automatic injection.
-- [x] Refresh installed Lua scripts individually to check for updates or update the selected repo's star count.
+- [x] Add automatic injection. ✅
+- [x] Add a button to refresh installed Lua scripts individually. ✅
 
 ###  
 
