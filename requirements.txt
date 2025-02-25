@@ -8,7 +8,6 @@ psutil
 pyinjector
 pillow
 PyGitHub
-pymem
 PyOpenGL
 PyOpenGL_accelerate
 pywin32
