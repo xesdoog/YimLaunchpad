@@ -4,17 +4,19 @@ import struct
 
 from ctypes import (
     byref,
-    c_size_t,
+    c_char_p,
     c_ubyte,
-    c_void_p,
     get_last_error,
     POINTER,
     sizeof,
+    string_at,
     WinDLL,
     WinError,
-    wintypes,
 )
-from ctypes import Structure as c_struct
+from ctypes import c_size_t as SIZE_T
+from ctypes import c_void_p as VOID
+from ctypes import Structure as STRUCT
+from ctypes.wintypes import BOOL, DWORD
 from time import sleep
 from typing import List, Optional
 from src.logger import LOGGER
@@ -44,24 +46,20 @@ kernel32 = WinDLL("kernel32", use_last_error=True)
 psapi = WinDLL("Psapi.dll", use_last_error=True)
 
 
-HMODULE = c_void_p
-DWORD = wintypes.DWORD
-
-
-class MODULEINFO(c_struct):
+class MODULEINFO(STRUCT):
     _fields_ = [
-        ("lpBaseOfDll", c_void_p),
+        ("lpBaseOfDll", VOID),
         ("SizeOfImage", DWORD),
-        ("EntryPoint", c_void_p),
+        ("EntryPoint", VOID),
     ]
 
 
-class MEMORY_BASIC_INFORMATION(c_struct):
+class MEMORY_BASIC_INFORMATION(STRUCT):
     _fields_ = [
-        ("BaseAddress", c_void_p),
-        ("AllocationBase", c_void_p),
+        ("BaseAddress", VOID),
+        ("AllocationBase", VOID),
         ("AllocationProtect", DWORD),
-        ("RegionSize", c_size_t),
+        ("RegionSize", SIZE_T),
         ("State", DWORD),
         ("Protect", DWORD),
         ("Type", DWORD),
@@ -70,12 +68,12 @@ class MEMORY_BASIC_INFORMATION(c_struct):
 
 VirtualQueryEx = kernel32.VirtualQueryEx
 VirtualQueryEx.argtypes = [
-    wintypes.HANDLE,
-    c_void_p,
+    VOID,
+    VOID,
     POINTER(MEMORY_BASIC_INFORMATION),
-    c_size_t,
+    SIZE_T,
 ]
-VirtualQueryEx.restype = c_size_t
+VirtualQueryEx.restype = SIZE_T
 
 
 LOG = LOGGER()
@@ -129,7 +127,7 @@ class Scanner:
         def get_string(self) -> str:
             try:
                 data = self.scanner.read_process_memory(
-                    self.scanner.process_handle, self.address, 256
+                    self.scanner.process_handle, self.address, 8
                 )
                 null_pos = data.find(b"\x00")
                 if null_pos != -1:
@@ -137,7 +135,18 @@ class Scanner:
                 else:
                     return data.decode("utf-8", errors="ignore")
             except Exception as e:
-                LOG.error(f"[SCANNER] Failed to read string at 0x{self.address:X}: {e}")
+                print(f"Failed to read string at 0x{self.address:X}: {e}")
+                return None
+
+        def get_c_char_p(self) -> str:
+            try:
+                data = self.scanner.read_process_memory(
+                    self.scanner.process_handle, self.address, 8
+                )
+                c_char_ptr = c_char_p(data)
+                return string_at(c_char_ptr).decode()
+            except Exception as e:
+                print(f"Failed to read string at 0x{self.address:X}: {e}")
                 return None
 
         def _get_(self, size: int, format: str):
@@ -193,7 +202,7 @@ class Scanner:
         return False
 
     def get_base_address(self) -> int:
-        lphModule = (HMODULE * 1024)()
+        lphModule = (VOID * 1024)()
         lpcbNeeded = DWORD()
 
         if psapi.EnumProcessModulesEx(
@@ -210,12 +219,12 @@ class Scanner:
         module_info = MODULEINFO()
         GetModuleInformation = psapi.GetModuleInformation
         GetModuleInformation.argtypes = [
-            wintypes.HANDLE,
-            HMODULE,
+            VOID,
+            VOID,
             POINTER(MODULEINFO),
             DWORD,
         ]
-        GetModuleInformation.restype = wintypes.BOOL
+        GetModuleInformation.restype = BOOL
 
         if not GetModuleInformation(
             self.process_handle, module_handle, byref(module_info), sizeof(module_info)
@@ -251,7 +260,7 @@ class Scanner:
             mem_info = MEMORY_BASIC_INFORMATION()
             result = VirtualQueryEx(
                 self.process_handle,
-                c_void_p(address),
+                VOID(address),
                 byref(mem_info),
                 sizeof(mem_info),
             )
@@ -338,9 +347,9 @@ class Scanner:
         self, process_handle: int, address: int, size: int
     ) -> bytes:
         buffer = (c_ubyte * size)()
-        bytesRead = c_size_t(0)
+        bytesRead = SIZE_T(0)
         if not kernel32.ReadProcessMemory(
-            process_handle, c_void_p(address), buffer, size, byref(bytesRead)
+            process_handle, VOID(address), buffer, size, byref(bytesRead)
         ):
             raise WinError(get_last_error())
         return bytes(buffer)
@@ -374,3 +383,22 @@ class Scanner:
             current_addr += read_size
 
         return None
+
+
+def get_game_version():
+    scanner = Scanner("GTA5.exe")
+    if not scanner.is_process_running():
+        LOG.debug("Process not found.")
+        return
+
+    gv_addr = scanner.find_pattern(ptrn_gvov)
+    if gv_addr:
+        try:
+            gv = gv_addr.add(0x24).rip().get_string()
+            ov = gv_addr.add(0x24).rip().add(0x20).get_string()
+            LOG.debug(f"GTA V b{gv} online {ov}")
+            # print(gv_addr.add(0x24).rip().get_c_char_p())
+            return gv, ov
+        except Exception as e:
+            LOG.error(e)
+    return "Nullbyte", "Nullbyte"

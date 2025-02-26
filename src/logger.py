@@ -19,7 +19,13 @@ USER_OS_VERSION = version()
 
 def log_init_str(app_version: str):
     return f"""
---- YimLaunchpad ---
+
+__  ___           __                           __                    __
+\ \/ (_)___ ___  / /   ____ ___  ______  _____/ /_  ____  ____ _____/ /
+ \  / / __ `__ \/ /   / __ `/ / / / __ \/ ___/ __ \/ __ \/ __ `/ __  / 
+ / / / / / / / / /___/ /_/ / /_/ / / / / /__/ / / / /_/ / /_/ / /_/ /  
+/_/_/_/ /_/ /_/_____/\__,_/\__,_/_/ /_/\___/_/ /_/ .___/\__,_/\__,_/   
+                                                /_/                    
 
     - Version: v{app_version}
     - Operating System: {USER_OS} {USER_OS_RELEASE} x{USER_OS_ARCH} v{USER_OS_VERSION}

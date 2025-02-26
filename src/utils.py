@@ -28,6 +28,8 @@ CONFIG_PATH = os.path.join(LAUNCHPAD_PATH, "settings.json")
 YIM_MENU_PATH = os.path.join(os.getenv("APPDATA"), "YimMenu")
 YIM_SCRIPTS_PATH = os.path.join(YIM_MENU_PATH, "scripts")
 LAUNCHPAD_URL = "https://github.com/xesdoog/YimLaunchpad"
+EGS_LAUNCH_CMD = "com.epicgames.launcher://apps/9d2d0eb64d5c44529cece33fe2a46482?action=launch&silent=true"
+STEAM_LAUNCH_CMD = "steam://run/271590"
 CLIENT_ID = "Iv23lij2DMB5JgpS7rK7"
 AUTH_TOKEN = None
 LOG = LOGGER()
@@ -162,9 +164,9 @@ class GitHubOAuth:
 
     @reset_abort
     def parse_response(self, response):
-        LOG.info("Parsing response...")
+        LOG.debug("Parsing response...")
         if response.status_code in {200, 201}:
-            LOG.info(f"Received response: {response.status_code} OK.")
+            LOG.debug(f"Received response: {response.status_code} OK.")
             return response.json()
         elif response.status_code == 401:
             LOG.error(
@@ -422,11 +424,11 @@ def calc_file_checksum(file):
         return None
 
 
-def append_short_sha(file: str):
-    checksum = str(calc_file_checksum(file))[:6]
-    if len(checksum) == 6:
-        return f"{os.path.basename(file)} [{checksum}]"
-    return str(os.path.basename(file))
+def append_short_sha(file_path: str):
+    checksum = str(calc_file_checksum(file_path))[:6]
+    if checksum:
+        return f"{os.path.basename(file_path)} [{checksum}]"
+    return str(os.path.basename(file_path))
 
 
 def get_remote_checksum():
@@ -452,10 +454,10 @@ def get_remote_checksum():
         return None
 
 
-def is_file_saved(name, list):
-    if len(list) > 0:
-        for file in list:
-            if file["name"] == name:
+def is_file_saved(file_name, saved_list):
+    if len(saved_list) > 0:
+        for file in saved_list:
+            if file["name"] == file_name:
                 return True
     return False
 
@@ -559,11 +561,24 @@ def get_lua_repos():
 
         if requests_remaining == 0:
             LOG.error("Failed to fetch GitHub repositories! Rate limit exceeded.")
-            return [], [], [], True, 0
+            return [], [], [], 0
 
         YimMenu_Lua = git.get_organization("YimMenu-Lua")
 
         for repo in YimMenu_Lua.get_repos(sort="pushed", direction="desc"):
+            if (
+                git.rate_limiting == 0
+            ):
+                LOG.warning(
+                    f"API rate limit reached while fetching repositories! Managed to load {len(repos)} repositories."
+                )
+                return (
+                    repos,
+                    update_available,
+                    starred_repos,
+                    0,
+                )  # early exit
+
             if str(repo.name).lower() not in exclude_repos:
                 repos.append(repo)
                 if repo.name in installed:
@@ -575,11 +590,11 @@ def get_lua_repos():
             else:
                 LOG.info(f"Skipping repository '{repo.name}'")
         LOG.info(f"Loaded {len(repos)} repositories.")
-        return repos, update_available, starred_repos, False, requests_remaining
+        return repos, update_available, starred_repos, requests_remaining
 
     except Exception:
         LOG.error("Failed to fetch GitHub repositories! Rate limit exceeded.")
-        return [], [], [], True, 0
+        return [], [], [], 0
 
 
 def refresh_repository(repo: Repository):
@@ -597,13 +612,8 @@ def refresh_repository(repo: Repository):
 
 def get_installed_scripts():
     Luas = {}
-
     if os.path.exists(YIM_SCRIPTS_PATH):
-
         enabled_scripts = next(os.walk(YIM_SCRIPTS_PATH))[1]
-        # disabled_path = os.path.join(YIM_SCRIPTS_PATH, "disabled")
-        # disabled_scripts = next(os.walk(disabled_path))[1]
-
         for dir_1 in enabled_scripts:
             if dir_1 not in ("includes", "disabled") and not str(dir_1).startswith("."):
                 mtime_1 = max(
@@ -612,16 +622,6 @@ def get_installed_scripts():
                 )
                 date_1 = datetime.fromtimestamp(mtime_1, tz=timezone.utc)
                 Luas.update({dir_1: {"disabled": False, "date_modified": date_1}})
-
-        # for dir_2 in disabled_scripts:
-        #     if dir_2 not in ("includes", "disabled") and not str(dir_2).startswith("."):
-        #         mtime_2 = max(
-        #             os.stat(root).st_mtime
-        #             for root, _, _ in os.walk(os.path.join(disabled_path, dir_2))
-        #         )
-        #         date_2 = datetime.fromtimestamp(mtime_2, tz=timezone.utc)
-        #         Luas.update({dir_2: {"disabled": True, "date_modified": date_2}})
-
     return Luas
 
 
@@ -633,6 +633,10 @@ def is_script_disabled(repo: Repository):
     return os.path.exists(
         os.path.join(os.path.join(YIM_SCRIPTS_PATH, "disabled"), repo.name)
     )
+
+
+def does_script_have_updates(repo_name: str, updatable_scripts: list) -> bool:
+    return len(updatable_scripts) > 0 and repo_name in updatable_scripts
 
 
 def run_updater():
@@ -705,5 +709,9 @@ def add_exclusion(paths: list):
         pass
 
 
-def is_thread_active(thread) -> bool:
-    return thread and not thread.done()
+def run_detached_process(arg):
+    return subprocess.run(
+        args=f"cmd /c start {arg}",
+        creationflags=0x00000008 | 0x00000200,
+        close_fds=True,
+    ).returncode

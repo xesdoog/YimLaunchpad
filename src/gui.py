@@ -172,7 +172,7 @@ def new_window(
     pos_y = vidMode.size.height
 
     window = glfw.create_window(int(width), int(height), title, None, None)
-    hand_cursor = glfw.create_standard_cursor(glfw.POINTING_HAND_CURSOR)
+    # hand_cursor = glfw.create_standard_cursor(glfw.POINTING_HAND_CURSOR)
     icon = Image.open(res_path("img/ylp_icon.ico"))
     icon = icon.convert("RGBA")
     icon_data = np.array(icon, dtype=np.uint8)
@@ -185,7 +185,7 @@ def new_window(
         glfw.terminate()
         raise Exception("Failed to initialize window!")
 
-    return window, hand_cursor
+    return window
 
 
 def set_window_size(window: object, width: int, height: int):

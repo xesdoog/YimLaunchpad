@@ -11,18 +11,20 @@ from src.memory import Scanner, ptrn_gs, ptrn_glt
 from src.logger import LOGGER
 
 
-YLP_VERSION = "1.0.0.5"
+APP_NAME = "YimLaunchpad"
+APP_VERSION = "1.0.0.6"
 PARENT_PATH = Path(__file__).parent
 ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
-LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), "YimLaunchpad")
+LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), APP_NAME)
 AVATAR_PATH = os.path.join(LAUNCHPAD_PATH, "avatar.png")
 UPDATE_PATH = os.path.join(LAUNCHPAD_PATH, "update")
-LOG = LOGGER(YLP_VERSION)
+LOG = LOGGER(APP_VERSION)
 
-launchpad_window = FindWindow(None, "YimLaunchpad")
+
+launchpad_window = FindWindow(None, APP_NAME)
 if launchpad_window != 0:
     LOG.warning(
-        "YimLaunchpad is aleady running! Only one instance can be launched at once.\n"
+        f"{APP_NAME} is aleady running! Only one instance can be launched at once.\n"
     )
     SetForegroundWindow(launchpad_window)
     sys.exit(0)
@@ -36,7 +38,6 @@ LOG.on_init()
 import atexit
 import io
 import requests
-import subprocess
 import zipfile
 
 from concurrent.futures import ThreadPoolExecutor
@@ -66,22 +67,6 @@ is_fsl_enabled = False
 game_state_checked = False
 can_auto_inject = False
 window = None
-ylp_ver_thread = None
-ylp_down_thread = None
-yim_ver_thread = None
-ylp_init_thread = None
-launch_thread = None
-inject_thread = None
-game_check_thread = None
-yim_down_thread = None
-file_add_thread = None
-lua_repos_thread = None
-lua_downl_thread = None
-busy_icon_thread = None
-git_login_thread = None
-refresh_repo_thread = None
-defender_exclusions_thead = None
-status_updt_task = None
 task_status_col = None
 ylp_remote_ver = None
 gs_addr = None
@@ -101,7 +86,9 @@ YIM_SETTINGS = os.path.join(YIM_MENU_PATH, "settings.json")
 auto_exit = utils.read_cfg_item(CONFIG_PATH, "auto_exit_after_injection")
 auto_inject = utils.read_cfg_item(CONFIG_PATH, "auto_inject")
 launchpad_console = utils.read_cfg_item(CONFIG_PATH, "launchpad_console")
+is_dev = os.path.isfile(os.path.join(os.getcwd(), "3asba"))
 GitOAuth = utils.GitHubOAuth()
+threads = {}
 updatable_luas = []
 starred_luas = []
 dll_files = []
@@ -110,12 +97,14 @@ ImRed = [1.0, 0.0, 0.0]
 ImGreen = [0.0, 1.0, 0.0]
 ImBlue = [0.0, 0.0, 1.0]
 ImYellow = [1.0, 1.0, 0.0]
+
 LAUNCHERS = [
     "- Select Launcher -",
     "Epic Games",
     "Rockstar Games",
     "Steam",
 ]
+
 UIThemes = {
     "Dark": {
         "frame": [0.1, 0.1, 0.1],
@@ -155,8 +144,27 @@ def res_path(path: str) -> Path:
     return ASSETS_PATH / Path(path)
 
 
+def is_any_thread_alive() -> bool:
+    return any(thread and not thread.done() for thread in threads.values())
+
+
+def is_thread_alive(thread_name: str) -> bool:
+    return (
+        thread_name in threads
+        and threads[thread_name]
+        and not threads[thread_name].done()
+    )
+
+
+def start_thread(thread_name, target_func, *args):
+    if is_thread_alive(thread_name):
+        return
+    threads[thread_name] = threadpool.submit(target_func, *args)
+
+
 def set_task_status(msg="", color=None, timeout=2):
     global task_status, task_status_col
+
     task_status = msg
     task_status_col = color
     sleep(timeout)
@@ -168,7 +176,6 @@ def dummy_progress():
     global progress_value
 
     progress_value = 0
-
     for i in range(101):
         progress_value = i / 100
         sleep(0.01)
@@ -179,35 +186,17 @@ def dummy_progress():
 def fetch_luas_progress():
     global progress_value
     global task_status_col
-    global lua_repos_thread
 
     progress_value = 0
 
-    while lua_repos_thread and not lua_repos_thread.done() and task_status_col != ImRed:
-        progress_value = progress_value + 0.002
+    while is_thread_alive("lua_repos_thread") and task_status_col != ImRed:
+        progress_value = progress_value + 0.001
         sleep(0.1)
+
     if progress_value < 1:
         progress_value = 1
         sleep(0.5)
     progress_value = 0
-
-
-def run_task_status_update(msg="", color=None, timeout=2):
-    global status_updt_task
-
-    if status_updt_task and not status_updt_task.done():
-        pass
-    else:
-        status_updt_task = threadpool.submit(set_task_status, msg, color, timeout)
-
-
-def run_github_login():
-    global task_status, git_login_thread
-
-    if git_login_thread and not git_login_thread.done():
-        pass
-    else:
-        git_login_thread = threadpool.submit(GitOAuth.login)
 
 
 def add_to_defender_exclusions():
@@ -228,54 +217,12 @@ def add_to_defender_exclusions():
     task_status = ""
 
 
-def run_exclusion_thread():
-    global defender_exclusions_thead
-
-    if defender_exclusions_thead and not defender_exclusions_thead.done():
-        pass
-    else:
-        defender_exclusions_thead = threadpool.submit(add_to_defender_exclusions)
-
-
-def get_status_widget_color():
-    global task_status
-    global ylp_ver_thread
-    global ylp_down_thread
-    global yim_ver_thread
-    global yim_down_thread
-    global ylp_init_thread
-    global launch_thread
-    global inject_thread
-    global file_add_thread
-    global lua_repos_thread
-    global lua_downl_thread
-    global git_login_thread
-    global refresh_repo_thread
-    global defender_exclusions_thead
-
-    if task_status != "":
-        if utils.stringFind(task_status, "error") or utils.stringFind(
-            task_status, "failed"
-        ):
+def get_status_widget_color(task_status):
+    if task_status:
+        if any(sub in task_status for sub in ("error", "failed")):
             return ImRed, "Error"
-        else:
-            for thread in (
-                ylp_init_thread,
-                ylp_ver_thread,
-                ylp_down_thread,
-                yim_ver_thread,
-                yim_down_thread,
-                launch_thread,
-                inject_thread,
-                file_add_thread,
-                lua_repos_thread,
-                lua_downl_thread,
-                git_login_thread,
-                refresh_repo_thread,
-                defender_exclusions_thead,
-            ):
-                if thread and not thread.done():
-                    return ImYellow, "Busy"
+        if is_any_thread_alive():
+            return ImYellow, "Busy"
     return ImGreen, "Ready"
 
 
@@ -284,8 +231,7 @@ def animate_icon():
 
     while True:
         sleep(0.1)
-        col, text = get_status_widget_color()
-        if col == ImYellow and text == "Busy":
+        if is_any_thread_alive():
             busy_icon = Icons.hourglass_1
             sleep(0.1)
             busy_icon = Icons.hourglass_2
@@ -315,28 +261,33 @@ def check_for_ylp_update():
     if remote_version is not None:
         ylp_remote_ver = remote_version
         try:
-            if YLP_VERSION < remote_version:
+            if APP_VERSION < remote_version:
                 LOG.info("Update available!")
                 task_status_col = ImGreen
                 task_status = f"Update {remote_version} is available."
                 gui.toast(f"YimLaunchpad v{remote_version} is available.")
                 ylp_update_avail = True
-            elif YLP_VERSION == remote_version:
+            elif APP_VERSION == remote_version:
                 LOG.info(
-                    f"No updates were found! v{YLP_VERSION} is the latest version."
+                    f"No updates were found! v{APP_VERSION} is the latest version."
                 )
                 task_status_col = None
                 task_status = (
-                    f"No updates were found! v{YLP_VERSION} is the latest version."
+                    f"No updates were found! v{APP_VERSION} is the latest version."
                 )
                 ylp_update_avail = False
-            elif YLP_VERSION > remote_version:
+            elif APP_VERSION > remote_version:
                 ylp_update_avail = False
-                LOG.error(
-                    f"Local YimLaunchpad version is {YLP_VERSION}. This is not a valid version! Are you a dev or a skid?"
-                )
-                task_status_col = ImRed
-                task_status = "Invalid version detected! Please download YimLaunchpad from the official Github repository."
+                if is_dev:
+                    task_status_col = None
+                    task_status = "Dev branch."
+                    LOG.debug(f"Superior version numbers are ignored in dev branches.")
+                else:
+                    LOG.error(
+                        f"Local YimLaunchpad version is {APP_VERSION}. This is not a valid version! Are you a dev or a skid?"
+                    )
+                    task_status_col = ImRed
+                    task_status = "Invalid version detected! Please download YimLaunchpad from the official Github repository."
         except Exception as e:
             task_status_col = ImRed
             ylp_update_active = False
@@ -435,14 +386,6 @@ def yimlaunchapd_init():
     if not os.path.exists(CONFIG_PATH):
         utils.save_cfg(CONFIG_PATH, default_cfg)
 
-    if os.path.isfile(YIMDLL_FILE):
-        if utils.get_remote_checksum() != utils.calc_file_checksum(YIMDLL_FILE):
-            yim_update_avail = True
-        else:
-            yim_update_avail = False
-    else:
-        yim_update_avail = False
-
     if not pending_update:
         task_status_col = None
         task_status = "Checking for YimLaunchpad updates..."
@@ -460,7 +403,7 @@ def yimlaunchapd_init():
     LOG.info("Initialization complete.")
 
 
-ylp_init_thread = threadpool.submit(yimlaunchapd_init)
+start_thread("ylp_init_thread", yimlaunchapd_init)
 
 
 def download_yim_menu():
@@ -568,43 +511,10 @@ def download_update():
             LOG.error(f"An error occured! Traceback: {e}")
             utils.delete_folder(UPDATE_PATH)
             sleep(3)
-
     progress_value = 0
     task_status = ""
     task_status_col = None
     ylp_update_active = False
-
-
-def run_ylp_update_check():
-    global ylp_ver_thread
-    if ylp_ver_thread and not ylp_ver_thread.done():
-        pass
-    else:
-        ylp_ver_thread = threadpool.submit(check_for_ylp_update)
-
-
-def run_yim_update_check():
-    global yim_ver_thread
-    if yim_ver_thread and not yim_ver_thread.done():
-        pass
-    else:
-        yim_ver_thread = threadpool.submit(check_for_yim_update)
-
-
-def run_yim_download():
-    global yim_down_thread
-    if yim_down_thread and not yim_down_thread.done():
-        pass
-    else:
-        yim_down_thread = threadpool.submit(download_yim_menu)
-
-
-def run_ylp_update():
-    global ylp_down_thread
-    if ylp_down_thread and not ylp_down_thread.done():
-        pass
-    else:
-        ylp_down_thread = threadpool.submit(download_update)
 
 
 def check_lua_repos():
@@ -618,11 +528,9 @@ def check_lua_repos():
     try:
         task_status_col = None
         task_status = "Fetching repository information from YimMenu-Lua..."
-        repos, updatable_luas, starred_luas, is_exhausted, git_requests_left = (
-            utils.get_lua_repos()
-        )
+        repos, updatable_luas, starred_luas, git_requests_left = utils.get_lua_repos()
 
-        if is_exhausted:
+        if git_requests_left == 0:
             task_status_col = ImRed
             task_status = (
                 "GitHub API rate limit exceeded! Please try again in a few minutes."
@@ -642,31 +550,21 @@ def check_lua_repos():
     task_status_col = None
 
 
-def run_lua_repos_check():
-    global lua_repos_thread
-    if lua_repos_thread and not lua_repos_thread.done():
-        pass
-    else:
-        lua_repos_thread = threadpool.submit(check_lua_repos)
-
-
-def lua_script_has_update(repo_name: str, update_available: list) -> bool:
-    return len(update_available) > 0 and repo_name in update_available
-
-
-def add_file_with_short_sha(file_path):
+def add_file_with_short_sha(file_path: str):
     global dll_files
     global task_status
     global task_status_col
+
     try:
         task_status_col = None
-        checksum = utils.calc_file_checksum(file_path)
-        file_name = f"{os.path.basename(file_path)} [{str(checksum)[:6]}]"
+        file_name = utils.append_short_sha(file_path)
+
         if utils.is_file_saved(file_name, dll_files):
             task_status = f"File {file_name} already exists."
             sleep(3)
             task_status = ""
             return
+
         dll_files.append({"name": file_name, "path": file_path})
         utils.save_cfg_item(CONFIG_PATH, "dll_files", dll_files)
         task_status = f"Added file {file_name} to the list of custom DLLs."
@@ -676,14 +574,6 @@ def add_file_with_short_sha(file_path):
     sleep(3)
     task_status_col = None
     task_status = ""
-
-
-def run_file_add_thread(file_path):
-    global file_add_thread
-    if file_add_thread and not file_add_thread.done():
-        pass
-    else:
-        file_add_thread = threadpool.submit(add_file_with_short_sha, file_path)
 
 
 def inject_dll(dll, process_id):
@@ -744,16 +634,7 @@ def inject_dll(dll, process_id):
         task_status_col = None
 
 
-def run_inject_thread(path, process):
-    global inject_thread
-
-    if inject_thread and not inject_thread.done():
-        pass
-    else:
-        inject_thread = threadpool.submit(inject_dll, path, process)
-
-
-def background_thread():
+def background_worker():
     global task_status
     global task_status_col
     global process_id
@@ -771,8 +652,10 @@ def background_thread():
         game_is_running = Scanner.is_process_running()
         if game_is_running:
             process_id = Scanner.pid
-            is_menu_injected = Scanner.is_module_loaded("YimMenu.dll")
-            is_fsl_enabled = Scanner.is_module_loaded("version.dll")
+            if not is_menu_injected:
+                is_menu_injected = Scanner.is_module_loaded("YimMenu.dll")
+            if not is_fsl_enabled:
+                is_fsl_enabled = Scanner.is_module_loaded("version.dll")
             if auto_inject and not is_menu_injected and not game_state_checked:
                 if not glt_addr:
                     glt_addr = Scanner.find_pattern(ptrn_glt)
@@ -797,7 +680,9 @@ def background_thread():
 
                             if 0 < gs < 5:
                                 task_status_col = None
-                                task_status = "Auto-Inject: Waiting for the landing page..."
+                                task_status = (
+                                    "Auto-Inject: Waiting for the landing page..."
+                                )
                                 sleep(0.5)
                             elif gs == 5:
                                 task_status_col = None
@@ -825,66 +710,51 @@ def background_thread():
         )
 
 
-def run_background_thread():
-    global game_check_thread
-    if game_check_thread and not game_check_thread.done():
-        pass
-    else:
-        game_check_thread = threadpool.submit(background_thread)
-
-
 def start_gta(idx: int):
     global task_status, task_status_col
 
+    exit_code = 0
     try:
         if idx == 1:
             task_status = (
-                "Attempting to launch GTA V though Epic Games Launcher, please wait..."
+                "Attempting to launch GTA V through Epic Games Launcher, please wait..."
             )
-            subprocess.run(
-                "cmd /c start com.epicgames.launcher://apps/9d2d0eb64d5c44529cece33fe2a46482?action=launch&silent=true",
-                creationflags=0x8,
-            )
+            exit_code = utils.run_detached_process(utils.EGS_LAUNCH_CMD)
         elif idx == 2:
-            task_status = "Attempting to launch GTA V though Rockstar Games Launcher, please wait..."
+            task_status = "Attempting to launch GTA V through Rockstar Games Launcher, please wait..."
             rgl_path = utils.get_rgl_path()
             if rgl_path is not None:
-                try:
-                    os.startfile(rgl_path + r"PlayGTAV.exe")
-                except OSError as err:
-                    LOG.error(f"Failed to run GTA5! Traceback: {err}")
-                    task_status = "Failed to run GTAV using Rockstar Games Launcher!"
-                    task_status_col = ImRed
+                exec_file = os.path.abspath(os.path.join(rgl_path, "PlayGTAV.exe"))
+                exit_code = utils.run_detached_process(exec_file)
             else:
                 task_status = "Failed to find Rockstar Games version of GTA V!"
                 task_status_col = ImRed
         elif idx == 3:
-            task_status = "Attempting to launch GTA V though Steam, please wait..."
-            subprocess.run("cmd /c start steam://run/271590", creationflags=0x8)
+            task_status = "Attempting to launch GTA V through Steam, please wait..."
+            exit_code = utils.run_detached_process(utils.STEAM_LAUNCH_CMD)
 
         sleep(3)
-        timeout = time() + 30
-        task_status = "Waiting for the game to start..."
-        while not game_is_running:
-            sleep(0.1)
-            if timeout <= time():
-                task_status = "Timed out while waiting for the game to start."
-                break
+        if exit_code == 0:
+            timeout = time() + 60
+            task_status = "Waiting for the game to start..."
+            while not game_is_running:
+                sleep(0.1)
+                if timeout <= time():
+                    task_status = "Timed out while waiting for the game to start."
+                    break
+        else:
+            LOG.error(f"Failed to start the game!")
+            task_status_col = ImYellow
+            task_status = f"Unable to start the game!"
     except Exception as e:
         LOG.error(f"Failed to start the game: {e}")
         task_status_col = ImYellow
         task_status = f"Unable to start the game!"
-    sleep(1)
-    task_status = ""
-    task_status_col = None
 
-
-def run_launch_thread(idx: int):
-    global launch_thread
-    if launch_thread and not launch_thread.done():
-        pass
-    else:
-        launch_thread = threadpool.submit(start_gta, idx)
+    if not auto_inject:
+        sleep(1)
+        task_status = ""
+        task_status_col = None
 
 
 def lua_download_regular(repo: Repository, path="", base_path=""):
@@ -906,12 +776,9 @@ def lua_download_regular(repo: Repository, path="", base_path=""):
                 os.path.relpath(content.path, base_path) if base_path else content.path
             )
             save_path = os.path.join(YIM_SCRIPTS_PATH, repo.name, rel_path)
-
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
             task_status = f"Downloading {content.path} from {repo.name}"
             lua_content = requests.get(content.download_url).text
-
             with open(save_path, "w", encoding="utf-8") as f:
                 f.write(lua_content)
 
@@ -975,16 +842,7 @@ def lua_download(repo: Repository):
     task_status = ""
 
 
-def run_lua_download(repo: Repository):
-    global lua_downl_thread
-
-    if lua_downl_thread and not lua_downl_thread.done():
-        pass
-    else:
-        lua_downl_thread = threadpool.submit(lua_download, repo)
-
-
-def repo_refresh_func(repo: Repository, index: int):
+def refresh_lua_repo(repo: Repository, index: int):
     global task_status
     global git_requests_left
     global repos
@@ -1002,13 +860,46 @@ def repo_refresh_func(repo: Repository, index: int):
     task_status = ""
 
 
-def run_repo_refresh_thread(repo: Repository, index: int):
-    global refresh_repo_thread
+def run_task_status_update(msg="", color=None, timeout=2):
+    start_thread(
+        "status_update_thread",
+        set_task_status,
+        msg,
+        color,
+        timeout,
+    )
 
-    if refresh_repo_thread and not refresh_repo_thread.done():
-        pass
-    else:
-        refresh_repo_thread = threadpool.submit(repo_refresh_func, repo, index)
+
+def run_ylp_update_check():
+    start_thread("ylp_ver_thread", check_for_ylp_update)
+
+
+def run_ylp_update():
+    start_thread("ylp_down_thread", download_update)
+
+
+def run_yim_update_check():
+    start_thread("yim_ver_thread", check_for_yim_update)
+
+
+def run_yim_download():
+    start_thread("yim_down_thread", download_yim_menu)
+
+
+def run_lua_repos_check():
+    start_thread("lua_repos_thread", check_lua_repos)
+
+
+def run_inject_thread(path, process):
+    start_thread("inject_thread", inject_dll, path, process)
+
+
+def run_lua_download(repo: Repository):
+    start_thread(
+        "lua_download_thread",
+        lua_download,
+        repo,
+    )
 
 
 def OnDraw():
@@ -1049,7 +940,7 @@ def OnDraw():
     username_alpha = 0.7
 
     ImGui.create_context()
-    window, hand_cursor = gui.new_window("YimLaunchpad", 400, 555, False)
+    window = gui.new_window(APP_NAME, 400, 555, False)
     impl = GlfwRenderer(window)
     font_scaling_factor = gui.fb_to_window_factor(window)
     io = ImGui.get_io()
@@ -1174,12 +1065,12 @@ def OnDraw():
             | ImGui.WINDOW_NO_MOVE,
         )
         with ImGui.begin_child("##YLP", 0, 460):
-            if ylp_init_thread and ylp_init_thread.done():
+            if not is_thread_alive("ylp_init_thread"):
+                start_thread("bachground_thread", background_worker)
                 if ImGui.begin_tab_bar("ylp"):
                     if ImGui.begin_tab_item(
                         f" {Icons.Dashboard}  Dashboard  "
                     ).selected:
-                        run_background_thread()
                         with ImGui.begin_child("##yimmenu", border=True):
                             with ImGui.font(title_font):
                                 gui.separator_text("YimMenu")
@@ -1200,7 +1091,7 @@ def OnDraw():
                             if not yim_update_active:
                                 if os.path.isfile(YIMDLL_FILE):
                                     yim_update_btn_label = (
-                                        f"{Icons.Refresh}  Check for Updates"
+                                        f"{Icons.Refresh}  Check For Updates"
                                         if not yim_update_avail
                                         else f"{Icons.Download}  Update YimMenu"
                                     )
@@ -1285,7 +1176,7 @@ def OnDraw():
                                             YIM_SETTINGS, "debug", yim_debug_settings
                                         )
                             else:
-                                if launch_thread and not launch_thread.done():
+                                if is_thread_alive("launch_thread"):
                                     gui.busy_button(busy_icon, "Please Wait...")
                                 else:
                                     ImGui.set_next_item_width(200)
@@ -1295,9 +1186,17 @@ def OnDraw():
                                     ImGui.same_line()
                                     if ImGui.button(f" {Icons.Play}  Run "):
                                         if launcher_index == 0:
-                                            run_task_status_update("Please select a launcher from the list!", ImYellow, 2)
+                                            run_task_status_update(
+                                                "Please select a launcher from the list!",
+                                                ImYellow,
+                                                2,
+                                            )
                                         else:
-                                            run_launch_thread(launcher_index)
+                                            start_thread(
+                                                "launch_thread",
+                                                start_gta,
+                                                launcher_index,
+                                            )
 
                             ImGui.dummy(1, 5)
                             cdll_clicked, custom_dlls = ImGui.checkbox(
@@ -1340,7 +1239,11 @@ def OnDraw():
                                             "DLL\0*.dll;\0", False
                                         )
                                         if file_path is not None:
-                                            run_file_add_thread(file_path)
+                                            start_thread(
+                                                "file_add_thread",
+                                                add_file_with_short_sha,
+                                                file_path,
+                                            )
                                     gui.tooltip("Add custom DLL.")
                                     if len(dll_files) > 0:
                                         if ImGui.button(Icons.Minus):
@@ -1380,15 +1283,16 @@ def OnDraw():
                             Thread(target=fetch_luas_progress, daemon=True).start()
                             repos_checked = True
                         with ImGui.begin_child("##Lua", border=True):
-                            if lua_repos_thread and lua_repos_thread.done():
+                            if not is_thread_alive("lua_repos_thread"):
                                 if ImGui.button(f"{Icons.Refresh}  Refresh List"):
                                     run_lua_repos_check()
                                     Thread(
                                         target=fetch_luas_progress, daemon=True
                                     ).start()
-                                gui.tooltip(
-                                    f"Please do not spam this. You currently have {git_requests_left} request left."
-                                )
+                                if git_requests_left < 30:
+                                    gui.tooltip(
+                                        f"Please do not spam this. You currently have {git_requests_left} request left."
+                                    )
                                 ImGui.same_line(spacing=10)
                                 ImGui.bullet_text(
                                     f"API Requests Left: [{git_requests_left}]"
@@ -1408,11 +1312,13 @@ def OnDraw():
                                         YIM_SETTINGS, "lua", yim_lua_settings
                                     )
                             else:
-                                ImGui.text_disabled("Auto-Reload Lua Scripts")
+                                ImGui.dummy(1, 2)
+                                ImGui.text_disabled(
+                                    f"{Icons.Close} Auto-Reload Lua Scripts"
+                                )
 
                             if (
-                                lua_repos_thread
-                                and lua_repos_thread.done()
+                                not is_thread_alive("lua_repos_thread")
                                 and len(repos) > 0
                             ):
                                 ImGui.dummy(1, 10)
@@ -1436,8 +1342,10 @@ def OnDraw():
                                             repos[i].name
                                         ).x
                                         ImGui.same_line(spacing=400 - item_width - 135)
-                                        script_has_update = lua_script_has_update(
-                                            repos[i].name, updatable_luas
+                                        script_has_update = (
+                                            utils.does_script_have_updates(
+                                                repos[i].name, updatable_luas
+                                            )
                                         )
                                         ImGui.text_colored(
                                             Icons.Down,
@@ -1468,7 +1376,7 @@ def OnDraw():
                                         run_lua_download(selected_repo)
                                     ImGui.same_line()
                                 else:
-                                    if lua_script_has_update(
+                                    if utils.does_script_have_updates(
                                         selected_repo.name, updatable_luas
                                     ) and not utils.is_script_disabled(selected_repo):
                                         if ImGui.button(f"{Icons.Down} Update"):
@@ -1533,13 +1441,16 @@ def OnDraw():
                                 if (
                                     utils.is_script_installed(selected_repo)
                                     and not utils.is_script_disabled(selected_repo)
-                                    and not utils.is_thread_active(lua_downl_thread)
-                                    and not utils.is_thread_active(lua_repos_thread)
+                                    and not is_thread_alive("lua_downl_thread")
+                                    and not is_thread_alive("lua_repos_thread")
                                 ):
-                                    if not utils.is_thread_active(refresh_repo_thread):
+                                    if not is_thread_alive("refresh_repo_thread"):
                                         if ImGui.button(f" {Icons.Refresh} "):
-                                            run_repo_refresh_thread(
-                                                selected_repo, repo_index
+                                            start_thread(
+                                                "refresh_repo_thread",
+                                                refresh_lua_repo,
+                                                selected_repo,
+                                                repo_index,
                                             )
                                         gui.tooltip("Refresh repository")
                                     else:
@@ -1551,7 +1462,7 @@ def OnDraw():
                             ImGui.push_text_wrap_pos(win_w - 20)
                             ImGui.dummy(1, 5)
                             ylp_update_btn_label = (
-                                f"{Icons.Refresh}  Check for Updates"
+                                f"{Icons.Refresh}  Check For Updates"
                                 if not ylp_update_avail
                                 else f"{Icons.Download}  Download Update"
                             )
@@ -1569,13 +1480,16 @@ def OnDraw():
 
                             ImGui.dummy(1, 5)
                             if ImGui.button(
-                                f"{Icons.Folder}  Open YimLaunchpad Folder"
+                                f"{Icons.Folder}  Open YimLaunchpad's Folder"
                             ):
                                 utils.open_folder(LAUNCHPAD_PATH)
 
                             ImGui.dummy(1, 5)
                             if ImGui.button("Add YimLaunchpad To Exclusions"):
-                                run_exclusion_thread()
+                                start_thread(
+                                    "defender_exclusions_thead",
+                                    add_to_defender_exclusions,
+                                )
                             gui.tooltip(
                                 "Uses Powershell to add YimLaunchpad.exe and YimLaunchpad's folder to Windows Defender exclusions.\n\nNOTE: If you're using third party anti-virus software, this will not work.",
                                 None,
@@ -1598,19 +1512,25 @@ def OnDraw():
                                 autoinject_clicked, auto_inject = ImGui.checkbox(
                                     "Auto-Inject", auto_inject
                                 )
-                                gui.tooltip("Automatically detects the loading stage of the game and if it's in the landing page, auto-injects YimMenu.")
+                                gui.tooltip(
+                                    "Automatically detects the loading stage of the game and if it's in the landing page, auto-injects YimMenu."
+                                )
                                 if autoinject_clicked:
                                     utils.save_cfg_item(
                                         CONFIG_PATH, "auto_inject", auto_inject
                                     )
                             else:
                                 ImGui.text_disabled(f"{Icons.Close}  Auto-Inject")
-                                gui.tooltip("This option can not be interacted with until the Auto-Inject checks are completed.")
+                                gui.tooltip(
+                                    "This option can not be interacted with until the Auto-Inject checks are completed."
+                                )
                             ImGui.same_line(spacing=10)
                             ylpcon_clicked, launchpad_console = ImGui.checkbox(
                                 "Console", launchpad_console
                             )
-                            gui.tooltip(f"{launchpad_console and "Disable" or "Enable"} YimLaunchpad's debug console.")
+                            gui.tooltip(
+                                f"{launchpad_console and "Disable" or "Enable"} YimLaunchpad's debug console."
+                            )
                             if ylpcon_clicked:
                                 utils.save_cfg_item(
                                     CONFIG_PATH, "launchpad_console", launchpad_console
@@ -1626,7 +1546,10 @@ def OnDraw():
                                     if ImGui.button("Login To GitHub"):
                                         git_login_active = True
                                         task_status = "Logging in to GitHub..."
-                                        run_github_login()
+                                        start_thread(
+                                            "git_login_thread", GitOAuth.login()
+                                        )
+
                                     ImGui.same_line(spacing=10)
                                     if ImGui.button(f"  {Icons.Info}  "):
                                         ImGui.open_popup("git_more_info")
@@ -1637,7 +1560,7 @@ def OnDraw():
                                         small_font,
                                         0,
                                     )
-                                if git_login_thread and not git_login_thread.done():
+                                if is_thread_alive("git_login_thread"):
                                     gui.busy_button(busy_icon, "Logging in...")
                                     ImGui.same_line(spacing=20)
                                     if ImGui.button(f"{Icons.Close}  Abort"):
@@ -1704,7 +1627,9 @@ def OnDraw():
                                     gui.tooltip(f"{Icons.Extern_Link} Open in browser")
                                     username_alpha = 1.0
                                     if ImGui.is_item_clicked(0):
-                                        utils.visit_url(f"https://github.com/{git_username}")
+                                        utils.visit_url(
+                                            f"https://github.com/{git_username}"
+                                        )
                                 else:
                                     username_alpha = 0.7
                                 if ImGui.button(f"{Icons.Close} Logout"):
@@ -1730,7 +1655,7 @@ def OnDraw():
 
         ImGui.spacing()
         with ImGui.begin_child("##feedback", 0, 40):
-            status_col, status = get_status_widget_color()
+            status_col, status = get_status_widget_color(task_status)
             ImGui.text_colored(
                 Icons.Circle, status_col[0], status_col[1], status_col[2], 0.8
             )
@@ -1797,7 +1722,7 @@ def OnDraw():
         gui.glfw.swap_buffers(window)
 
     if status_col != ImGreen:
-        if git_login_thread and not git_login_thread.done():
+        if is_thread_alive("git_login_thread"):
             GitOAuth.abort()
         threadpool.shutdown()
     gui.gl.glDeleteTextures([avatar_texture])
