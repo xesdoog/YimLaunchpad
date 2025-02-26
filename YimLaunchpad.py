@@ -7,12 +7,12 @@ if getattr(sys, "frozen", False):
 from pathlib import Path
 from win32gui import FindWindow, SetForegroundWindow
 from src import utils, gui
-from src.memory import Scanner, ptrn_gs, ptrn_glt
+from src.memory import get_error_message, Scanner, psutil, PTRN_GS, PTRN_LT
 from src.logger import LOGGER
 
 
 APP_NAME = "YimLaunchpad"
-APP_VERSION = "1.0.0.6"
+APP_VERSION = "1.0.0.7"
 PARENT_PATH = Path(__file__).parent
 ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), APP_NAME)
@@ -288,11 +288,11 @@ def check_for_ylp_update():
                     )
                     task_status_col = ImRed
                     task_status = "Invalid version detected! Please download YimLaunchpad from the official Github repository."
-        except Exception as e:
+        except Exception:
             task_status_col = ImRed
             ylp_update_active = False
             task_status = "An error occured while attempting to check for updates. Check the log for more details."
-            LOG.error(f"An error occured! Traceback: {e}")
+            LOG.error(f"An error occured!")
             ylp_update_avail = False
     else:
         task_status_col = ImRed
@@ -327,9 +327,9 @@ def check_for_yim_update():
                 LOG.info("No updates were found! YimMenu is up to date.")
                 task_status = "No updates were found! YimMenu is up to date."
                 yim_update_avail = False
-        except Exception as e:
+        except Exception:
             task_status = "An error occured while attempting to check for updates! Check the log for more details."
-            LOG.error(f"An error occured! Traceback: {e}")
+            LOG.error(f"An error occured!")
             yim_update_avail = False
     else:
         task_status_col = ImRed
@@ -355,8 +355,8 @@ def check_saved_config():
                         del saved_config[key]
                         LOG.info(f'Removed stale config key: "{key}".')
             utils.save_cfg(CONFIG_PATH, saved_config)
-        except Exception as e:
-            LOG.error(e)
+        except Exception:
+            LOG.error("An error occured!")
     dummy_progress()
 
 
@@ -443,8 +443,8 @@ def download_yim_menu():
                 LOG.error(
                     f"Download failed! The request returned status code: {response.status_code}"
                 )
-    except requests.exceptions.RequestException as e:
-        LOG.error(f"An error occured while trying to download YimMenu. Traceback: {e}")
+    except Exception:
+        LOG.error(f"An error occured while trying to download YimMenu.")
         task_status_col = ImRed
         task_status = "Download failed! Check the log for more details."
     sleep(5)
@@ -505,10 +505,10 @@ def download_update():
                     task_status = (
                         "Failed to download the update. Check the log for more details."
                     )
-        except Exception as e:
+        except Exception:
             task_status_col = ImRed
             task_status = "An error occured! Check the log for more details"
-            LOG.error(f"An error occured! Traceback: {e}")
+            LOG.error(f"An error occured!")
             utils.delete_folder(UPDATE_PATH)
             sleep(3)
     progress_value = 0
@@ -539,10 +539,10 @@ def check_lua_repos():
         if len(updatable_luas) > 0:
             gui.toast("Updates are available for some of your installed Lua scripts.")
 
-    except Exception as e:
+    except Exception:
         task_status_col = ImRed
         task_status = "An error occured! Check the log for more details."
-        LOG.error(f"Failed to get repository information! Traceback: {e}")
+        LOG.error(f"Failed to get repository information!")
         pass
 
     sleep(5)
@@ -596,8 +596,12 @@ def inject_dll(dll, process_id):
                 sleep(1)
                 task_status = "Checking if the game is still running after injection..."
                 LOG.debug("Checking if the game is still running after injection...")
+                try:
+                    gta_exit_code = psutil.Process(Scanner.pid).wait(5)
+                except psutil.TimeoutExpired:
+                    gta_exit_code = 0
                 sleep(5)
-                if game_is_running:
+                if gta_exit_code == 0:
                     task_status = "Done."
                     LOG.debug("Everything seems fine.")
                     sleep(3)
@@ -608,9 +612,13 @@ def inject_dll(dll, process_id):
                             sleep(1)
                         should_exit = True
                 else:
-                    LOG.warning("The game seems to have crashed after injection!")
-                    task_status = "Uh Oh! Did your game crash?"
-                    task_status_col = ImYellow
+                    str_exit_code = utils.to_hex(gta_exit_code)
+                    ntstatus = get_error_message(gta_exit_code)
+                    task_status_col = ImRed
+                    LOG.warning(
+                        f"The game crashed after injection with exit code: {str_exit_code} ({ntstatus})"
+                    )
+                    task_status = f"The game crashed after injection: {ntstatus}"
             else:
                 LOG.error(
                     f"Failed to inject DLL: {os.path.basename(dll)} was not found!"
@@ -623,9 +631,9 @@ def inject_dll(dll, process_id):
             task_status_col = ImRed
             LOG.warning("Injection failed! Process GTA5.exe was not found.")
             task_status = "Process not found! Is the game running?"
-    except Exception as e:
+    except Exception:
         task_status_col = ImRed
-        LOG.critical(f"An exception has occured! Traceback: {e}")
+        LOG.critical(f"An exception has occured!")
         task_status = "Injection failed! Check the log for more details."
 
     if not should_exit:
@@ -648,7 +656,7 @@ def background_worker():
     global gs_addr
 
     try:
-        Scanner.find_process("GTA5.exe", 0.01)
+        Scanner.procmon("GTA5.exe", 0.01)
         game_is_running = Scanner.is_process_running()
         if game_is_running:
             process_id = Scanner.pid
@@ -658,9 +666,9 @@ def background_worker():
                 is_fsl_enabled = Scanner.is_module_loaded("version.dll")
             if auto_inject and not is_menu_injected and not game_state_checked:
                 if not glt_addr:
-                    glt_addr = Scanner.find_pattern(ptrn_glt)
+                    glt_addr = Scanner.find_pattern(PTRN_LT)
                 if not gs_addr:
-                    gs_addr = Scanner.find_pattern(ptrn_gs)
+                    gs_addr = Scanner.find_pattern(PTRN_GS)
 
                 if gs_addr:
                     try:
@@ -694,8 +702,8 @@ def background_worker():
                                     is_menu_injected = True  # don't wait for the thread to find YimMenu's module
                                     game_state_checked = True
                                     can_auto_inject = False
-                    except Exception as e:
-                        LOG.error(e)
+                    except Exception:
+                        LOG.error("An error occured!")
                         game_state_checked = True
                         can_auto_inject = False
         else:
@@ -703,11 +711,8 @@ def background_worker():
             is_fsl_enabled = False
             game_state_checked = False
             can_auto_inject = False
-        sleep(1)
-    except Exception as e:
-        LOG.critical(
-            f"An error occured while trying to find the game's process. Traceback: {e}"
-        )
+    except Exception:
+        LOG.critical(f"Failed to find the game's process!")
 
 
 def start_gta(idx: int):
@@ -715,13 +720,13 @@ def start_gta(idx: int):
 
     exit_code = 0
     try:
+        LOG.info(f"Attempting to launch GTA V through {LAUNCHERS[idx]}.")
+        task_status = (
+            f"Attempting to launch GTA V through {LAUNCHERS[idx]}, please wait..."
+        )
         if idx == 1:
-            task_status = (
-                "Attempting to launch GTA V through Epic Games Launcher, please wait..."
-            )
             exit_code = utils.run_detached_process(utils.EGS_LAUNCH_CMD)
         elif idx == 2:
-            task_status = "Attempting to launch GTA V through Rockstar Games Launcher, please wait..."
             rgl_path = utils.get_rgl_path()
             if rgl_path is not None:
                 exec_file = os.path.abspath(os.path.join(rgl_path, "PlayGTAV.exe"))
@@ -730,7 +735,6 @@ def start_gta(idx: int):
                 task_status = "Failed to find Rockstar Games version of GTA V!"
                 task_status_col = ImRed
         elif idx == 3:
-            task_status = "Attempting to launch GTA V through Steam, please wait..."
             exit_code = utils.run_detached_process(utils.STEAM_LAUNCH_CMD)
 
         sleep(3)
@@ -746,13 +750,13 @@ def start_gta(idx: int):
             LOG.error(f"Failed to start the game!")
             task_status_col = ImYellow
             task_status = f"Unable to start the game!"
-    except Exception as e:
-        LOG.error(f"Failed to start the game: {e}")
+    except Exception:
+        LOG.error(f"Failed to start the game!")
         task_status_col = ImYellow
         task_status = f"Unable to start the game!"
 
     if not auto_inject:
-        sleep(1)
+        sleep(3)
         task_status = ""
         task_status_col = None
 

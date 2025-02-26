@@ -1,3 +1,4 @@
+import errno
 import os
 import psutil
 import struct
@@ -22,11 +23,10 @@ from typing import List, Optional
 from src.logger import LOGGER
 
 
-ptrn_lgls = "72 1F E8 ? ? ? ? 8B 0D ? ? ? 01 FF C1 48"
-ptrn_glt = "8B 05 ? ? ? ? 89 ? 48 8D 4D C8"
-ptrn_gs = "83 3D ? ? ? ? ? 75 17 8B 43 20 25"
-ptrn_gvov = "8B C3 33 D2 C6 44 24 20"
-
+PTRN_GS = "83 3D ? ? ? ? ? 75 17 8B 43 20 25" # Game State
+PTRN_GV = "8B C3 33 D2 C6 44 24 20" # Game Version
+PTRN_LS = "72 1F E8 ? ? ? ? 8B 0D ? ? ? 01 FF C1 48" # Legal Screen
+PTRN_LT = "8B 05 ? ? ? ? 89 ? 48 8D 4D C8" # Lifetime
 
 # https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-enumprocessmodulesex
 LIST_MODULES_ALL = 0x03
@@ -40,7 +40,15 @@ PAGE_GUARD = 0x100
 PROCESS_VM_READ = 0x0010
 PROCESS_VM_OPERATION = 0x0008
 PROCESS_QUERY_INFORMATION = 0x0400
-
+NTSTATUS_CODES = {
+    0xC0000005: "STATUS_ACCESS_VIOLATION",
+    0xC0000409: "STATUS_STACK_BUFFER_OVERRUN",
+    0xC000000D: "STATUS_INVALID_PARAMETER",
+    0xC0000022: "STATUS_ACCESS_DENIED",
+    0xC0000135: "STATUS_DLL_NOT_FOUND",
+    0xC0000142: "STATUS_DLL_INIT_FAILED",
+    0xC00000FD: "STATUS_STACK_OVERFLOW",
+}
 
 kernel32 = WinDLL("kernel32", use_last_error=True)
 psapi = WinDLL("Psapi.dll", use_last_error=True)
@@ -81,10 +89,9 @@ LOG = LOGGER()
 
 class Scanner:
     def __init__(self, process_name=None):
-        if process_name:
-            self.process_name = process_name
-            self.pid = self.get_process_id()
-            self.process_handle = self.get_process_handle()
+        self.process_name = process_name
+        self.pid = self.get_process_id() if process_name else None
+        self.process_handle = self.get_process_handle() if self.pid else None
 
     class Pointer:
         def __init__(self, scanner, address: int):
@@ -105,8 +112,8 @@ class Scanner:
                 rel_offset = struct.unpack("<i", data)[0]
                 rip_addr = self.address + rel_offset + 4
                 return self.scanner.Pointer(self.scanner, rip_addr)
-            except Exception as e:
-                LOG.error(f"[SCANNER] Failed to RIP address at 0x{self.address:X}: {e}")
+            except Exception:
+                LOG.error(f"[SCANNER] Failed to RIP address at 0x{self.address:X}")
                 return self.scanner.Pointer(self.scanner, 0x0)
 
         def get_byte(self) -> int:
@@ -145,8 +152,8 @@ class Scanner:
                 )
                 c_char_ptr = c_char_p(data)
                 return string_at(c_char_ptr).decode()
-            except Exception as e:
-                print(f"Failed to read string at 0x{self.address:X}: {e}")
+            except Exception:
+                LOG.error(f"Failed to read string at 0x{self.address:X}")
                 return None
 
         def _get_(self, size: int, format: str):
@@ -155,24 +162,24 @@ class Scanner:
                     self.scanner.process_handle, self.address, size
                 )
                 return struct.unpack(format, data)[0]
-            except Exception as e:
-                LOG.error(f"[SCANNER] Failed to read memory at 0x{self.address:X}: {e}")
+            except Exception:
+                LOG.error(f"[SCANNER] Failed to read memory at 0x{self.address:X}")
                 return None
 
         def __repr__(self):
             return f"Pointer<0x{self.address:X}>"
 
-    def find_process(self, process_name, timeout=0.001):
+    def find_process(self, process_name: str, interval=0.1):
         self.process_name = process_name
-        self.pid = self.get_process_id(timeout)
+        self.pid = self.get_process_id(interval)
         self.process_handle = self.get_process_handle()
 
     def is_process_running(self):
-        return self.pid not in (None, 0)
+        return self.pid not in (None, 0) and psutil.pid_exists(self.pid)
 
-    def get_process_id(self, timeout=0.001):
+    def get_process_id(self, interval=0.1):
         for p in psutil.process_iter(["name", "exe", "cmdline"]):
-            sleep(timeout)
+            sleep(interval)
             if (
                 self.process_name == p.info["name"]
                 or (
@@ -183,6 +190,15 @@ class Scanner:
             ):
                 return p.pid
         return None
+    
+    def procmon(self, proc_name, interval=0.1):
+        if self.pid and self.is_process_running():
+            pass
+        else:
+            self.pid = None
+            self.process_handle = None
+            self.find_process(proc_name, interval)
+        sleep(2)
 
     def get_process_modules(self):
         try:
@@ -192,8 +208,8 @@ class Scanner:
                 if module.path and module.path.endswith(".dll"):
                     loaded_modules[os.path.basename(module.path).lower()] = module.path
             return loaded_modules
-        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-            LOG.error(f"[SCANNER] Failed to get process modules: {e}")
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            LOG.error(f"[SCANNER] Failed to get process modules")
             return {}
 
     def is_module_loaded(self, module_name: str):
@@ -231,14 +247,14 @@ class Scanner:
         ):
             error = WinError(get_last_error())
             LOG.critical(f"[SCANNER] Failed to retrieve module info: {error}")
-            raise error
+            return None
         return module_info
 
     def get_module_size(self) -> int:
         module_handle = self.get_base_address()
         if not module_handle:
-            LOG.critical("[SCANNER] Failed to retrieve module handle")
-            raise Exception("Failed to retrieve module handle")
+            LOG.critical("[SCANNER] Failed to retrieve module handle!")
+            return 0
         module_info = self.get_module_info(module_handle)
         return module_info.SizeOfImage
 
@@ -291,7 +307,7 @@ class Scanner:
                     pattern.append((c1 << 4) + c2)
                 except ValueError:
                     LOG.critical(f"Invalid hex digit near '{sig[i:i+2]}'")
-                    raise ValueError(f"Invalid hex digit near '{sig[i:i+2]}'")
+                    return []
                 i += 2
             else:
                 pattern.append(None)
@@ -361,22 +377,22 @@ class Scanner:
         current_addr = base_address
         end_addr = base_address + module_size
 
-        LOG.debug(f"[SCANNER] Scanning memory pattern: '{sig}'")
+        LOG.debug(f"[SCANNER] Scanning memory pattern: '{varname(sig)}'")
         while current_addr < end_addr:
             read_size = min(chunk_size, end_addr - current_addr)
             try:
                 mem_chunk = self.read_process_memory(
                     self.process_handle, current_addr, read_size
                 )
-            except Exception as e:
-                LOG.error(f"[SCANNER] Failed to read memory at 0x{current_addr:X}: {e}")
+            except Exception:
+                LOG.error(f"[SCANNER] Failed to read memory at 0x{current_addr:X}")
                 current_addr += read_size
                 continue
 
             offset = self.scan_pattern(pattern, mem_chunk)
             if offset is not None:
                 LOG.debug(
-                    f"[SCANNER] Found pattern at address: 0x{(current_addr + offset):X}"
+                    f"[SCANNER] Found pattern '{varname(sig)}' at address: 0x{(current_addr + offset):X}"
                 )
                 return self.Pointer(self, current_addr + offset)
 
@@ -391,7 +407,7 @@ def get_game_version():
         LOG.debug("Process not found.")
         return
 
-    gv_addr = scanner.find_pattern(ptrn_gvov)
+    gv_addr = scanner.find_pattern(PTRN_GV)
     if gv_addr:
         try:
             gv = gv_addr.add(0x24).rip().get_string()
@@ -399,6 +415,20 @@ def get_game_version():
             LOG.debug(f"GTA V b{gv} online {ov}")
             # print(gv_addr.add(0x24).rip().get_c_char_p())
             return gv, ov
-        except Exception as e:
-            LOG.error(e)
+        except Exception:
+            LOG.error("An error occured!")
     return "Nullbyte", "Nullbyte"
+
+
+def get_error_message(exit_code: int):
+    code = exit_code & 0xFFFFFFFF if exit_code < 0 else exit_code
+    if code in errno.errorcode:
+        return f"POSIX_ERROR_{errno.errorcode[code]}"
+    elif code in NTSTATUS_CODES:
+        return NTSTATUS_CODES[code]
+    else:
+        return "UNK_ERR"
+
+
+def varname(var):
+    return [name for name in globals() if globals()[name] is var][0]

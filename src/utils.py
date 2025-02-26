@@ -190,8 +190,8 @@ class GitHubOAuth:
             refresh_token = keyring.get_password("YLPGIT_RFR", "refresh_token")
             expiry = keyring.get_password("YLPGIT_EXP", "token_expiry")
             return access_token, refresh_token, float(expiry) if expiry else None
-        except Exception as e:
-            LOG.error(e)
+        except Exception:
+            LOG.error("An error occured!")
             return None, None, None
 
     def delete_tokens(self):
@@ -199,8 +199,8 @@ class GitHubOAuth:
             keyring.delete_password("YLPGIT_ACC", "access_token")
             keyring.delete_password("YLPGIT_RFR", "refresh_token")
             keyring.delete_password("YLPGIT_EXP", "token_expiry")
-        except Exception as e:
-            LOG.error(e)
+        except Exception:
+            LOG.error("An error occured!")
 
     def save_avatar(self, username: str):
         avatar_path = os.path.join(LAUNCHPAD_PATH, "avatar.png")
@@ -449,8 +449,8 @@ def get_remote_checksum():
         if char_count == 64:
             LOG.info(f"Latest YimMenu release checksum: {sha256_string}")
             return sha256_string
-    except Exception as e:
-        LOG.error(f"An error occured! Traceback: function get_remote_checksum() -> {e}")
+    except Exception:
+        LOG.error(f"An error occured!")
         return None
 
 
@@ -475,9 +475,9 @@ def get_rgl_path() -> str:
         subkeyValue = winreg.QueryValueEx(subkey, r"InstallFolder")
         LOG.debug(f"Rockstar Games Launcher version path: {subkeyValue[0]}")
         return subkeyValue[0]
-    except OSError as err:
+    except Exception:
         LOG.error(
-            f"An error has occured while trying to read Rockstar Games Launcher's path! Traceback: {err}"
+            f"An error has occured while trying to read Rockstar Games Launcher's path"
         )
 
 
@@ -566,9 +566,7 @@ def get_lua_repos():
         YimMenu_Lua = git.get_organization("YimMenu-Lua")
 
         for repo in YimMenu_Lua.get_repos(sort="pushed", direction="desc"):
-            if (
-                git.rate_limiting == 0
-            ):
+            if git.rate_limiting == 0:
                 LOG.warning(
                     f"API rate limit reached while fetching repositories! Managed to load {len(repos)} repositories."
                 )
@@ -709,9 +707,16 @@ def add_exclusion(paths: list):
         pass
 
 
-def run_detached_process(arg):
-    return subprocess.run(
-        args=f"cmd /c start {arg}",
-        creationflags=0x00000008 | 0x00000200,
-        close_fds=True,
-    ).returncode
+def run_detached_process(arg: str):
+    try:
+        return subprocess.run(
+            args=f"cmd /c start {arg}",
+            creationflags=0x00000008 | 0x00000200,
+            close_fds=True,
+        ).returncode
+    except Exception:
+        return -1
+
+
+def to_hex(value: int):
+    return f"0x{value & 0xFFFFFFFF if value < 0 else value:X}"

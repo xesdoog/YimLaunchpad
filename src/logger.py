@@ -17,25 +17,6 @@ USER_OS_RELEASE = release()
 USER_OS_VERSION = version()
 
 
-def log_init_str(app_version: str):
-    return f"""
-
-__  ___           __                           __                    __
-\ \/ (_)___ ___  / /   ____ ___  ______  _____/ /_  ____  ____ _____/ /
- \  / / __ `__ \/ /   / __ `/ / / / __ \/ ___/ __ \/ __ \/ __ `/ __  / 
- / / / / / / / / /___/ /_/ / /_/ / / / / /__/ / / / /_/ / /_/ / /_/ /  
-/_/_/_/ /_/ /_/_____/\__,_/\__,_/_/ /_/\___/_/ /_/ .___/\__,_/\__,_/   
-                                                /_/                    
-
-    - Version: v{app_version}
-    - Operating System: {USER_OS} {USER_OS_RELEASE} x{USER_OS_ARCH} v{USER_OS_VERSION}
-    - Working Directory: {LAUNCHPAD_PATH}
-    - Executable Directory: {executable_dir()}
-
-
-"""
-
-
 def executable_dir():
     return os.path.dirname(os.path.abspath(sys.argv[0]))
 
@@ -95,6 +76,26 @@ class LOGGER:
         self.file_handler.setFormatter(self.formatter)
         self.logger.addHandler(self.file_handler)
         self.console_handler = None
+    
+    class ConsoleFormatter:
+        LEVEL_COLORS = {
+            "DEBUG": "\x1b[34m",
+            "INFO": "\x1b[32m",
+            "WARNING": "\x1b[33;20m",
+            "ERROR": "\x1b[31;20m",
+            "CRITICAL": "\x1b[31;1m"
+        }
+        CALLER_COLOR = "\x1b[1;30m"
+        DEFAULT_COLOR = "\x1b[0m"
+
+        def __init__(self):
+            self.formatter = LOGGER().formatter
+
+        def format(self, record):
+            record.caller_name = f"{self.CALLER_COLOR}{record.caller_name}{self.DEFAULT_COLOR}"
+            level_color = self.LEVEL_COLORS.get(record.levelname, "\x1b[37m")
+            record.levelname = f"{level_color}{record.levelname}{self.DEFAULT_COLOR}"
+            return self.formatter.format(record)
 
     def show_console(self):
         if not windll.kernel32.GetConsoleWindow():
@@ -105,7 +106,7 @@ class LOGGER:
         if not self.console_handler:
             self.console_handler = logging.StreamHandler(sys.stdout)
             self.console_handler.setLevel(logging.DEBUG)
-            self.console_handler.setFormatter(self.formatter)
+            self.console_handler.setFormatter(self.ConsoleFormatter())
             self.logger.addHandler(self.console_handler)
             print(log_init_str(self.app_version))
 
@@ -129,13 +130,36 @@ class LOGGER:
         self.logger.warning(msg)
 
     def error(self, msg: str):
-        self.logger.error(msg)
+        self.logger.error(msg, exc_info=1 if sys.exc_info()[0] is not None else 0)
 
     def critical(self, msg: str):
-        self.logger.critical(msg)
+        self.logger.critical(msg, stack_info=True, exc_info=1 if sys.exc_info()[0] is not None else 0)
 
     def on_init(self):
         with open(LOG_FILE, "a") as f:
             f.write(log_init_str(self.app_version))
             f.flush()
             f.close()
+
+
+BANNER = r"""
+__  ___           __                           __                    __
+\ \/ (_)___ ___  / /   ____ ___  ______  _____/ /_  ____  ____ _____/ /
+ \  / / __ `__ \/ /   / __ `/ / / / __ \/ ___/ __ \/ __ \/ __ `/ __  / 
+ / / / / / / / / /___/ /_/ / /_/ / / / / /__/ / / / /_/ / /_/ / /_/ /  
+/_/_/_/ /_/ /_/_____/\__,_/\__,_/_/ /_/\___/_/ /_/ .___/\__,_/\__,_/   
+                                                /_/                    
+"""
+
+def log_init_str(app_version: str):
+    return f"""
+
+    {BANNER}
+
+    - Version: v{app_version}
+    - Operating System: {USER_OS} {USER_OS_RELEASE} x{USER_OS_ARCH} v{USER_OS_VERSION}
+    - Working Directory: {LAUNCHPAD_PATH}
+    - Executable Directory: {executable_dir()}
+
+
+"""
