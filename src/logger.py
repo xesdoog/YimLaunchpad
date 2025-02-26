@@ -15,7 +15,7 @@ USER_OS = system()
 USER_OS_ARCH = architecture()[0][:2]
 USER_OS_RELEASE = release()
 USER_OS_VERSION = version()
-
+kernel32 = windll.kernel32
 
 def executable_dir():
     return os.path.dirname(os.path.abspath(sys.argv[0]))
@@ -98,11 +98,16 @@ class LOGGER:
             return self.formatter.format(record)
 
     def show_console(self):
-        if not windll.kernel32.GetConsoleWindow():
-            windll.kernel32.AllocConsole()
+        if not kernel32.GetConsoleWindow():
+            kernel32.AllocConsole()
             sys.stdout = open("CONOUT$", "w", encoding="utf-8")
             sys.stderr = open("CONOUT$", "w", encoding="utf-8")
-            windll.kernel32.SetConsoleTitleW("YimLaunchpad")
+            kernel32.SetConsoleTitleW("YimLaunchpad")
+
+            # Console colors
+            if getattr(sys, "frozen", False) or os.environ.get("ENABLE_ANSI", "0") == "1":
+                kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 0x0001 | 0x0002 | 0x0004) # https://learn.microsoft.com/en-us/windows/console/setconsolemode
+
         if not self.console_handler:
             self.console_handler = logging.StreamHandler(sys.stdout)
             self.console_handler.setLevel(logging.DEBUG)
