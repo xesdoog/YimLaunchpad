@@ -107,6 +107,6 @@ If you don't want to use the release executable built by GitHub Actions, you can
 - Download [UPX](https://github.com/upx/upx/releases) and note down where you saved it.
 - Once ready, run this command to build a portable executable:
 
-      pyinstaller "YimLaunchpad.py" --noconfirm --onefile --windowed --name "YimLaunchpad" --clean --icon "./src/assets/img/ylp_icon.ico" --splash "./src/assets/img/ylp_splash.png" --add-data "./src;src/" --add-binary "./src/assets/dll/glfw3.dll;." --add-binary "./src/assets/dll/msvcr110.dll;." --upx-dir "PATH_TO_WHERE_YOU_SAVED_UPX" --upx-exclude "vcruntime140.dll" --hidden-import=winsdk
+      pyinstaller "YimLaunchpad.py" --noconfirm --onefile --windowed --name "YimLaunchpad" --clean --icon "./src/assets/img/ylp_icon.ico" --splash "./src/assets/img/ylp_splash.png" --add-data "./src;src/" --add-binary "./src/assets/dll/glfw3.dll;." --add-binary "./src/assets/dll/msvcr110.dll;." --upx-dir "PATH_TO_WHERE_YOU_SAVED_UPX" --upx-exclude "vcruntime140.dll"
 
 - Once the process completes, there will be a new folder in the project's root directory named `dist`. The executable can be found there.
