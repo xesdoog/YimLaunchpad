@@ -17,6 +17,7 @@ USER_OS_RELEASE = release()
 USER_OS_VERSION = version()
 kernel32 = windll.kernel32
 
+
 def executable_dir():
     return os.path.dirname(os.path.abspath(sys.argv[0]))
 
@@ -106,7 +107,8 @@ class LOGGER:
 
             # Console colors
             if getattr(sys, "frozen", False) or os.environ.get("ENABLE_ANSI", "0") == "1":
-                kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 0x0001 | 0x0002 | 0x0004) # https://learn.microsoft.com/en-us/windows/console/setconsolemode
+                # https://learn.microsoft.com/en-us/windows/console/setconsolemode
+                kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 0x0001 | 0x0002 | 0x0004)
 
         if not self.console_handler:
             self.console_handler = logging.StreamHandler(sys.stdout)

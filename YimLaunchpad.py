@@ -12,7 +12,7 @@ from src.logger import LOGGER
 
 
 APP_NAME = "YimLaunchpad"
-APP_VERSION = "1.0.0.7"
+APP_VERSION = "1.0.0.8"
 PARENT_PATH = Path(__file__).parent
 ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), APP_NAME)
@@ -47,32 +47,6 @@ from threading import Thread
 from time import sleep, time
 
 
-Icons = gui.Icons
-Scanner = Scanner()
-ImGui = gui.imgui
-Repository = utils.Repository
-threadpool = ThreadPoolExecutor(max_workers=3)
-progress_value = 0
-process_id = 0
-git_requests_left = 0
-should_exit = False
-pending_update = False
-ylp_update_avail = False
-ylp_update_active = False
-yim_update_avail = False
-yim_update_active = False
-game_is_running = False
-is_menu_injected = False
-is_fsl_enabled = False
-game_state_checked = False
-can_auto_inject = False
-window = None
-task_status_col = None
-ylp_remote_ver = None
-gs_addr = None
-glt_addr = None
-task_status = ""
-busy_icon = ""
 LAUNCHPAD_URL = "https://github.com/xesdoog/YimLaunchpad"
 NIGHTLY_URL = (
     "https://github.com/Mr-X-GTA/YimMenu/releases/download/nightly/YimMenu.dll"
@@ -83,29 +57,13 @@ YIMDLL_FILE = os.path.join(YIMDLL_PATH, "YimMenu.dll")
 YIM_MENU_PATH = os.path.join(os.getenv("APPDATA"), "YimMenu")
 YIM_SCRIPTS_PATH = os.path.join(YIM_MENU_PATH, "scripts")
 YIM_SETTINGS = os.path.join(YIM_MENU_PATH, "settings.json")
-auto_exit = utils.read_cfg_item(CONFIG_PATH, "auto_exit_after_injection")
-auto_inject = utils.read_cfg_item(CONFIG_PATH, "auto_inject")
-launchpad_console = utils.read_cfg_item(CONFIG_PATH, "launchpad_console")
-is_dev = os.path.isfile(os.path.join(os.getcwd(), "3asba"))
-GitOAuth = utils.GitHubOAuth()
-threads = {}
-updatable_luas = []
-starred_luas = []
-dll_files = []
-repos = []
-ImRed = [1.0, 0.0, 0.0]
-ImGreen = [0.0, 1.0, 0.0]
-ImBlue = [0.0, 0.0, 1.0]
-ImYellow = [1.0, 1.0, 0.0]
-
 LAUNCHERS = [
     "- Select Launcher -",
     "Epic Games",
     "Rockstar Games",
     "Steam",
 ]
-
-UIThemes = {
+THEMES = {
     "Dark": {
         "frame": [0.1, 0.1, 0.1],
         "header": [0.1, 0.1, 0.1],
@@ -127,9 +85,8 @@ UIThemes = {
         "button": [0.0, 0.0, 1.0],
     },
 }
-
-default_cfg = {
-    "theme": UIThemes["Dark"],
+DEFAULT_CFG = {
+    "theme": THEMES["Dark"],
     "custom_dlls": False,
     "auto_exit_after_injection": False,
     "launchpad_console": False,
@@ -138,6 +95,50 @@ default_cfg = {
     "git_username": "",
     "dll_files": [],
 }
+
+
+Icons = gui.Icons
+Scanner = Scanner()
+Repository = utils.Repository
+ImGui = gui.imgui
+GitOAuth = utils.GitHubOAuth()
+threadpool = ThreadPoolExecutor(max_workers=3)
+
+
+progress_value = 0
+process_id = 0
+git_requests_left = 0
+should_exit = False
+pending_update = False
+ylp_update_avail = False
+ylp_update_active = False
+yim_update_avail = False
+yim_update_active = False
+game_is_running = False
+is_menu_injected = False
+is_fsl_enabled = False
+game_state_checked = False
+can_auto_inject = False
+window = None
+task_status_col = None
+ylp_remote_ver = None
+gs_addr = None
+glt_addr = None
+task_status = ""
+busy_icon = ""
+auto_exit = utils.read_cfg_item(CONFIG_PATH, "auto_exit_after_injection")
+auto_inject = utils.read_cfg_item(CONFIG_PATH, "auto_inject")
+launchpad_console = utils.read_cfg_item(CONFIG_PATH, "launchpad_console")
+is_dev = os.path.isfile(os.path.join(os.getcwd(), "3asba"))
+threads = {}
+updatable_luas = []
+starred_luas = []
+dll_files = []
+repos = []
+ImRed = [1.0, 0.0, 0.0]
+ImGreen = [0.0, 1.0, 0.0]
+ImBlue = [0.0, 0.0, 1.0]
+ImYellow = [1.0, 1.0, 0.0]
 
 
 def res_path(path: str) -> Path:
@@ -232,18 +233,15 @@ def animate_icon():
     while True:
         sleep(0.1)
         if is_any_thread_alive():
-            busy_icon = Icons.hourglass_1
+            busy_icon = Icons.Hourglass_1
             sleep(0.1)
-            busy_icon = Icons.hourglass_2
+            busy_icon = Icons.Hourglass_2
             sleep(0.1)
-            busy_icon = Icons.hourglass_3
+            busy_icon = Icons.Hourglass_3
             sleep(0.1)
-            busy_icon = Icons.hourglass_4
+            busy_icon = Icons.Hourglass_4
             sleep(0.1)
-            busy_icon = Icons.hourglass_5
-
-
-Thread(target=animate_icon, daemon=True).start()
+            busy_icon = Icons.Hourglass_5
 
 
 def check_for_ylp_update():
@@ -342,16 +340,16 @@ def check_for_yim_update():
 
 def check_saved_config():
     saved_config: dict = utils.read_cfg(CONFIG_PATH)
-    if len(saved_config) != len(default_cfg):
+    if len(saved_config) != len(DEFAULT_CFG):
         try:
-            if len(saved_config) < len(default_cfg):
-                for key in default_cfg:
+            if len(saved_config) < len(DEFAULT_CFG):
+                for key in DEFAULT_CFG:
                     if key not in saved_config:
-                        saved_config.update({key: default_cfg[key]})
+                        saved_config.update({key: DEFAULT_CFG[key]})
                         LOG.info(f'Added missing config key: "{key}".')
-            elif len(saved_config) > len(default_cfg):
+            elif len(saved_config) > len(DEFAULT_CFG):
                 for key in saved_config.copy():
-                    if key not in default_cfg:
+                    if key not in DEFAULT_CFG:
                         del saved_config[key]
                         LOG.info(f'Removed stale config key: "{key}".')
             utils.save_cfg(CONFIG_PATH, saved_config)
@@ -379,12 +377,12 @@ def yimlaunchapd_init():
     global yim_update_avail
     global task_status
     global task_status_col
-    global default_cfg
+    global DEFAULT_CFG
     global dll_files
 
     task_status = "Initializing YimLaunchpad, please wait..."
     if not os.path.exists(CONFIG_PATH):
-        utils.save_cfg(CONFIG_PATH, default_cfg)
+        utils.save_cfg(CONFIG_PATH, DEFAULT_CFG)
 
     if not pending_update:
         task_status_col = None
@@ -786,12 +784,14 @@ def lua_download_regular(repo: Repository, path="", base_path=""):
             with open(save_path, "w", encoding="utf-8") as f:
                 f.write(lua_content)
 
-    if is_empty:
+    if not is_empty:
+        task_status = "Download complete."
+    else:
         task_status_col = ImRed
         task_status = "This repository doesn't have any Lua files."
-        sleep(3)
-        task_status_col = None
-        task_status = ""
+    sleep(3)
+    task_status_col = None
+    task_status = ""
 
 
 def lua_download_release(repo: Repository):
@@ -821,6 +821,7 @@ def lua_download_release(repo: Repository):
                             os.makedirs(os.path.dirname(extract_path), exist_ok=True)
                             with open(extract_path, "wb") as f:
                                 f.write(zip_file.read(file))
+
                     if is_empty:
                         task_status_col = ImRed
                         task_status = "This release doesn't have any Lua files."
@@ -829,6 +830,8 @@ def lua_download_release(repo: Repository):
                         task_status = ""
                         return False
 
+                    task_status = "Download complete."
+                    sleep(2)
                     return True
     return False
 
@@ -840,7 +843,6 @@ def lua_download(repo: Repository):
         task_status = f"No suitable release found for {repo.name}! Trying to manually download the script..."
         sleep(2)
         lua_download_regular(repo)
-    task_status = "Download complete."
     sleep(3)
     progress_value = 0
     task_status = ""
@@ -1373,92 +1375,99 @@ def OnDraw():
                                     selected_repo: Repository = repos[repo_index]
                                 ImGui.separator()
                                 ImGui.dummy(1, 5)
-                                if not utils.is_script_installed(
-                                    selected_repo
-                                ) and not utils.is_script_disabled(selected_repo):
-                                    if ImGui.button(f"{Icons.Download} Download"):
-                                        run_lua_download(selected_repo)
-                                    ImGui.same_line()
+                                if is_thread_alive("lua_download_thread"):
+                                    gui.busy_button(busy_icon, "Please Wait...")
                                 else:
-                                    if utils.does_script_have_updates(
-                                        selected_repo.name, updatable_luas
+                                    if not utils.is_script_installed(
+                                        selected_repo
                                     ) and not utils.is_script_disabled(selected_repo):
-                                        if ImGui.button(f"{Icons.Down} Update"):
+                                        if ImGui.button(f"{Icons.Download} Download"):
                                             run_lua_download(selected_repo)
                                         ImGui.same_line()
-                                    if ImGui.button(f"{Icons.Trash} Delete"):
-                                        ImGui.open_popup(f"delete {selected_repo.name}")
-                                    gui.message_box(
-                                        f"delete {selected_repo.name}",
-                                        "Are you sure?",
-                                        title_font,
-                                        1,
-                                        utils.delete_folder,
-                                        os.path.join(
-                                            YIM_SCRIPTS_PATH, selected_repo.name
-                                        ),
-                                        run_task_status_update,
-                                        "Access denied! Try running YimLaunchpad as admin.",
-                                        ImRed,
-                                        5,
-                                    )
-                                    ImGui.same_line()
-                                if utils.is_script_installed(selected_repo):
-                                    if ImGui.button(f"{Icons.Close} Disable"):
-                                        try:
-                                            old_path = os.path.join(
-                                                YIM_SCRIPTS_PATH, selected_repo.name
-                                            )
-                                            disabled_path = os.path.join(
-                                                os.path.join(
-                                                    YIM_SCRIPTS_PATH, "disabled"
-                                                ),
-                                                selected_repo.name,
-                                            )
-                                            os.rename(old_path, disabled_path)
-                                        except OSError:
-                                            run_task_status_update(
-                                                "This script already exists in the disabled folder.",
-                                                ImYellow,
-                                                3,
-                                            )
-                                elif utils.is_script_disabled(selected_repo):
-                                    if ImGui.button(f"{Icons.Checkmark} Enable"):
-                                        try:
-                                            old_path = os.path.join(
-                                                os.path.join(
-                                                    YIM_SCRIPTS_PATH, "disabled"
-                                                ),
-                                                selected_repo.name,
-                                            )
-                                            enabled_path = os.path.join(
-                                                YIM_SCRIPTS_PATH, selected_repo.name
-                                            )
-                                            os.rename(old_path, enabled_path)
-                                        except OSError:
-                                            run_task_status_update(
-                                                "This script already exists in the scripts folder.",
-                                                ImYellow,
-                                                3,
-                                            )
-                                ImGui.same_line()
-                                if (
-                                    utils.is_script_installed(selected_repo)
-                                    and not utils.is_script_disabled(selected_repo)
-                                    and not is_thread_alive("lua_downl_thread")
-                                    and not is_thread_alive("lua_repos_thread")
-                                ):
-                                    if not is_thread_alive("refresh_repo_thread"):
-                                        if ImGui.button(f" {Icons.Refresh} "):
-                                            start_thread(
-                                                "refresh_repo_thread",
-                                                refresh_lua_repo,
-                                                selected_repo,
-                                                repo_index,
-                                            )
-                                        gui.tooltip("Refresh repository")
                                     else:
-                                        gui.busy_button(busy_icon)
+                                        if utils.does_script_have_updates(
+                                            selected_repo.name, updatable_luas
+                                        ) and not utils.is_script_disabled(
+                                            selected_repo
+                                        ):
+                                            if ImGui.button(f"{Icons.Down} Update"):
+                                                run_lua_download(selected_repo)
+                                            ImGui.same_line()
+                                        if ImGui.button(f"{Icons.Trash} Delete"):
+                                            ImGui.open_popup(
+                                                f"delete {selected_repo.name}"
+                                            )
+                                        gui.message_box(
+                                            f"delete {selected_repo.name}",
+                                            "Are you sure?",
+                                            title_font,
+                                            1,
+                                            utils.delete_folder,
+                                            os.path.join(
+                                                YIM_SCRIPTS_PATH, selected_repo.name
+                                            ),
+                                            run_task_status_update,
+                                            "Access denied! Try running YimLaunchpad as admin.",
+                                            ImRed,
+                                            5,
+                                        )
+                                        ImGui.same_line()
+                                    if utils.is_script_installed(selected_repo):
+                                        if ImGui.button(f"{Icons.Close} Disable"):
+                                            try:
+                                                old_path = os.path.join(
+                                                    YIM_SCRIPTS_PATH, selected_repo.name
+                                                )
+                                                disabled_path = os.path.join(
+                                                    os.path.join(
+                                                        YIM_SCRIPTS_PATH, "disabled"
+                                                    ),
+                                                    selected_repo.name,
+                                                )
+                                                os.rename(old_path, disabled_path)
+                                            except OSError:
+                                                run_task_status_update(
+                                                    "This script already exists in the disabled folder.",
+                                                    ImYellow,
+                                                    3,
+                                                )
+                                    elif utils.is_script_disabled(selected_repo):
+                                        if ImGui.button(f"{Icons.Checkmark} Enable"):
+                                            try:
+                                                old_path = os.path.join(
+                                                    os.path.join(
+                                                        YIM_SCRIPTS_PATH, "disabled"
+                                                    ),
+                                                    selected_repo.name,
+                                                )
+                                                enabled_path = os.path.join(
+                                                    YIM_SCRIPTS_PATH, selected_repo.name
+                                                )
+                                                os.rename(old_path, enabled_path)
+                                            except OSError:
+                                                run_task_status_update(
+                                                    "This script already exists in the scripts folder.",
+                                                    ImYellow,
+                                                    3,
+                                                )
+                                    ImGui.same_line()
+                                    if (
+                                        utils.is_script_installed(selected_repo)
+                                        and not utils.is_script_disabled(selected_repo)
+                                        and not is_thread_alive("lua_downl_thread")
+                                        and not is_thread_alive("lua_repos_thread")
+                                    ):
+                                        if not is_thread_alive("refresh_repo_thread"):
+                                            if ImGui.button(f" {Icons.Refresh} "):
+                                                start_thread(
+                                                    "refresh_repo_thread",
+                                                    refresh_lua_repo,
+                                                    selected_repo,
+                                                    repo_index,
+                                                )
+                                            gui.tooltip("Refresh repository")
+                                        else:
+                                            gui.busy_button(busy_icon)
                         ImGui.end_tab_item()
 
                     if ImGui.begin_tab_item(f"  {Icons.Gear}  Settings  ").selected:
@@ -1743,6 +1752,8 @@ if __name__ == "__main__":
     try:
         if getattr(sys, "frozen", False):
             pyi_splash.close()
+
+        Thread(target=animate_icon, daemon=True).start()
         OnDraw()
     finally:
         if pending_update:

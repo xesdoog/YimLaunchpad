@@ -34,6 +34,7 @@ CLIENT_ID = "Iv23lij2DMB5JgpS7rK7"
 AUTH_TOKEN = None
 LOG = LOGGER()
 
+
 install_cache(
     cache_name="yimlaunchpad_cache",
     cache_control=True,
@@ -555,18 +556,18 @@ def get_lua_repos():
         git = Github()
         AUTH_TOKEN = None
 
-    requests_remaining, _ = git.rate_limiting
-    LOG.info(f"Current API rate limit is {requests_remaining} requests/hour.")
+    rl, _ = git.rate_limiting
+    LOG.info(f"Current API rate limit is {rl} requests/hour.")
     try:
-
-        if requests_remaining == 0:
+        if rl == 0:
             LOG.error("Failed to fetch GitHub repositories! Rate limit exceeded.")
             return [], [], [], 0
 
         YimMenu_Lua = git.get_organization("YimMenu-Lua")
 
         for repo in YimMenu_Lua.get_repos(sort="pushed", direction="desc"):
-            if git.rate_limiting == 0:
+            rl, _ = git.rate_limiting
+            if rl == 0:
                 LOG.warning(
                     f"API rate limit reached while fetching repositories! Managed to load {len(repos)} repositories."
                 )
@@ -575,7 +576,7 @@ def get_lua_repos():
                     update_available,
                     starred_repos,
                     0,
-                )  # early exit
+                )
 
             if str(repo.name).lower() not in exclude_repos:
                 repos.append(repo)
@@ -588,7 +589,8 @@ def get_lua_repos():
             else:
                 LOG.info(f"Skipping repository '{repo.name}'")
         LOG.info(f"Loaded {len(repos)} repositories.")
-        return repos, update_available, starred_repos, requests_remaining
+        rl, _ = git.rate_limiting
+        return repos, update_available, starred_repos, rl
 
     except Exception:
         LOG.error("Failed to fetch GitHub repositories! Rate limit exceeded.")

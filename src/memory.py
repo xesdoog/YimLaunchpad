@@ -15,29 +15,26 @@ from ctypes import (
     WinError,
 )
 from ctypes import c_size_t as SIZE_T
-from ctypes import c_void_p as VOID
+from ctypes import c_void_p as PVOID
 from ctypes import Structure as STRUCT
 from ctypes.wintypes import BOOL, DWORD
+from inspect import currentframe
 from time import sleep
 from typing import List, Optional
 from src.logger import LOGGER
 
 
-PTRN_GS = "83 3D ? ? ? ? ? 75 17 8B 43 20 25" # Game State
-PTRN_GV = "8B C3 33 D2 C6 44 24 20" # Game Version
-PTRN_LS = "72 1F E8 ? ? ? ? 8B 0D ? ? ? 01 FF C1 48" # Legal Screen
-PTRN_LT = "8B 05 ? ? ? ? 89 ? 48 8D 4D C8" # Lifetime
-
-# https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-enumprocessmodulesex
-LIST_MODULES_ALL = 0x03
-# https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc
-MEM_COMMIT = 0x00001000
-# https://learn.microsoft.com/en-us/windows/win32/memory/memory-protection-constants
-PAGE_READWRITE = 0x04
+LOG = LOGGER()
+PTRN_GS = "83 3D ? ? ? ? ? 75 17 8B 43 20 25"  # Game State
+PTRN_GV = "8B C3 33 D2 C6 44 24 20"  # Game Version
+PTRN_LS = "72 1F E8 ? ? ? ? 8B 0D ? ? ? 01 FF C1 48"  # Legal Screen
+PTRN_LT = "8B 05 ? ? ? ? 89 ? 48 8D 4D C8"  # Lifetime
+LIST_MODULES_ALL = 0x03  # https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-enumprocessmodulesex
+MEM_COMMIT = 0x00001000  # https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc
+PAGE_READWRITE = 0x04  # https://learn.microsoft.com/en-us/windows/win32/memory/memory-protection-constants
 PAGE_NOACCESS = 0x01
 PAGE_GUARD = 0x100
-# https://learn.microsoft.com/en-us/windows/win32/procthread/process-security-and-access-rights
-PROCESS_VM_READ = 0x0010
+PROCESS_VM_READ = 0x0010  # https://learn.microsoft.com/en-us/windows/win32/procthread/process-security-and-access-rights
 PROCESS_VM_OPERATION = 0x0008
 PROCESS_QUERY_INFORMATION = 0x0400
 NTSTATUS_CODES = {
@@ -50,22 +47,19 @@ NTSTATUS_CODES = {
     0xC00000FD: "STATUS_STACK_OVERFLOW",
 }
 
-kernel32 = WinDLL("kernel32", use_last_error=True)
-psapi = WinDLL("Psapi.dll", use_last_error=True)
-
 
 class MODULEINFO(STRUCT):
     _fields_ = [
-        ("lpBaseOfDll", VOID),
+        ("lpBaseOfDll", PVOID),
         ("SizeOfImage", DWORD),
-        ("EntryPoint", VOID),
+        ("EntryPoint", PVOID),
     ]
 
 
 class MEMORY_BASIC_INFORMATION(STRUCT):
     _fields_ = [
-        ("BaseAddress", VOID),
-        ("AllocationBase", VOID),
+        ("BaseAddress", PVOID),
+        ("AllocationBase", PVOID),
         ("AllocationProtect", DWORD),
         ("RegionSize", SIZE_T),
         ("State", DWORD),
@@ -74,17 +68,26 @@ class MEMORY_BASIC_INFORMATION(STRUCT):
     ]
 
 
+kernel32 = WinDLL("kernel32", use_last_error=True)
 VirtualQueryEx = kernel32.VirtualQueryEx
 VirtualQueryEx.argtypes = [
-    VOID,
-    VOID,
+    PVOID,
+    PVOID,
     POINTER(MEMORY_BASIC_INFORMATION),
     SIZE_T,
 ]
 VirtualQueryEx.restype = SIZE_T
 
 
-LOG = LOGGER()
+psapi = WinDLL("Psapi.dll", use_last_error=True)
+GetModuleInformation = psapi.GetModuleInformation
+GetModuleInformation.argtypes = [
+    PVOID,
+    PVOID,
+    POINTER(MODULEINFO),
+    DWORD,
+]
+GetModuleInformation.restype = BOOL
 
 
 class Scanner:
@@ -92,6 +95,7 @@ class Scanner:
         self.process_name = process_name
         self.pid = self.get_process_id() if process_name else None
         self.process_handle = self.get_process_handle() if self.pid else None
+        self.modules = self.get_process_modules() if self.pid else None
 
     class Pointer:
         def __init__(self, scanner, address: int):
@@ -145,7 +149,7 @@ class Scanner:
                 print(f"Failed to read string at 0x{self.address:X}: {e}")
                 return None
 
-        def get_c_char_p(self) -> str:
+        def as_const_char_p(self) -> str: # LPCSTR
             try:
                 data = self.scanner.read_process_memory(
                     self.scanner.process_handle, self.address, 8
@@ -172,7 +176,9 @@ class Scanner:
     def find_process(self, process_name: str, interval=0.1):
         self.process_name = process_name
         self.pid = self.get_process_id(interval)
-        self.process_handle = self.get_process_handle()
+        if self.pid:
+            self.process_handle = self.get_process_handle()
+            self.modules = self.get_process_modules()
 
     def is_process_running(self):
         return self.pid not in (None, 0) and psutil.pid_exists(self.pid)
@@ -190,13 +196,14 @@ class Scanner:
             ):
                 return p.pid
         return None
-    
+
     def procmon(self, proc_name, interval=0.1):
         if self.pid and self.is_process_running():
             pass
         else:
             self.pid = None
             self.process_handle = None
+            self.modules = None
             self.find_process(proc_name, interval)
         sleep(2)
 
@@ -214,11 +221,11 @@ class Scanner:
 
     def is_module_loaded(self, module_name: str):
         if self.pid and module_name.endswith(".dll"):
-            return module_name.lower() in self.get_process_modules()
+            return self.modules is not None and module_name.lower() in self.modules
         return False
 
     def get_base_address(self) -> int:
-        lphModule = (VOID * 1024)()
+        lphModule = (PVOID * 1024)()
         lpcbNeeded = DWORD()
 
         if psapi.EnumProcessModulesEx(
@@ -233,14 +240,6 @@ class Scanner:
 
     def get_module_info(self, module_handle: int) -> MODULEINFO:
         module_info = MODULEINFO()
-        GetModuleInformation = psapi.GetModuleInformation
-        GetModuleInformation.argtypes = [
-            VOID,
-            VOID,
-            POINTER(MODULEINFO),
-            DWORD,
-        ]
-        GetModuleInformation.restype = BOOL
 
         if not GetModuleInformation(
             self.process_handle, module_handle, byref(module_info), sizeof(module_info)
@@ -248,6 +247,7 @@ class Scanner:
             error = WinError(get_last_error())
             LOG.critical(f"[SCANNER] Failed to retrieve module info: {error}")
             return None
+
         return module_info
 
     def get_module_size(self) -> int:
@@ -276,7 +276,7 @@ class Scanner:
             mem_info = MEMORY_BASIC_INFORMATION()
             result = VirtualQueryEx(
                 self.process_handle,
-                VOID(address),
+                PVOID(address),
                 byref(mem_info),
                 sizeof(mem_info),
             )
@@ -299,7 +299,6 @@ class Scanner:
 
             if sig[i] != "?":
                 if i + 1 >= n:
-                    LOG.critical("Incomplete byte in pattern!")
                     raise ValueError("Incomplete byte in pattern!")
                 try:
                     c1 = int(sig[i], 16)
@@ -365,13 +364,18 @@ class Scanner:
         buffer = (c_ubyte * size)()
         bytesRead = SIZE_T(0)
         if not kernel32.ReadProcessMemory(
-            process_handle, VOID(address), buffer, size, byref(bytesRead)
+            process_handle, PVOID(address), buffer, size, byref(bytesRead)
         ):
             raise WinError(get_last_error())
         return bytes(buffer)
 
     def find_pattern(self, sig: str, chunk_size: int = 4096) -> Pointer:
-        pattern = self.parse_pattern(sig)
+        try:
+            pattern = self.parse_pattern(sig)
+        except ValueError:
+            LOG.critical("[SCANNER] Incomplete byte in pattern!")
+            return None
+
         base_address = self.get_base_address()
         module_size = self.get_module_size()
         current_addr = base_address
@@ -410,25 +414,32 @@ def get_game_version():
     gv_addr = scanner.find_pattern(PTRN_GV)
     if gv_addr:
         try:
-            gv = gv_addr.add(0x24).rip().get_string()
-            ov = gv_addr.add(0x24).rip().add(0x20).get_string()
+            gv = gv_addr.add(0x24).rip().as_const_char_p()
+            ov = gv_addr.add(0x24).rip().add(0x20).as_const_char_p()
             LOG.debug(f"GTA V b{gv} online {ov}")
-            # print(gv_addr.add(0x24).rip().get_c_char_p())
             return gv, ov
         except Exception:
             LOG.error("An error occured!")
-    return "Nullbyte", "Nullbyte"
+    return "NULL", "NULL"
 
 
 def get_error_message(exit_code: int):
     code = exit_code & 0xFFFFFFFF if exit_code < 0 else exit_code
     if code in errno.errorcode:
-        return f"POSIX_ERROR_{errno.errorcode[code]}"
+        return f"POSIX_ERROR_{errno.errorcode[code]:S}"
     elif code in NTSTATUS_CODES:
         return NTSTATUS_CODES[code]
     else:
-        return "UNK_ERR"
+        return "UNKOWN_ERROR"
 
 
 def varname(var):
-    return [name for name in globals() if globals()[name] is var][0]
+    frame = currentframe().f_back
+    _locals = frame.f_locals
+    _globals = frame.f_globals
+
+    for k, v in {**_globals, **_locals}.items():
+        if v is var:
+            return k
+
+    return repr(var)

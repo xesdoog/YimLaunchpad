@@ -1,7 +1,3 @@
-from pathlib import Path
-from PIL import Image
-from pywintypes import error as pywinErr
-from win32gui import GetOpenFileNameW
 import glfw
 import imgui
 import numpy as np
@@ -11,7 +7,11 @@ import win32con
 
 from contextlib import contextmanager
 from cv2 import cvtColor, imread, COLOR_BGR2RGBA, IMREAD_UNCHANGED
+from pathlib import Path
+from PIL import Image
+from pywintypes import error as pywinErr
 from win11toast import notify
+from win32gui import GetOpenFileNameW
 
 
 PARENT_PATH = Path(__file__).parent
@@ -48,11 +48,11 @@ class Icons:
     Share = "\uf14d"
     File_c = "\uf1c9"
     Trash = "\uf1f8"
-    hourglass_1 = "\uf254"
-    hourglass_2 = "\uf251"
-    hourglass_3 = "\uf252"
-    hourglass_4 = "\uf253"
-    hourglass_5 = "\uf250"
+    Hourglass_1 = "\uf254"
+    Hourglass_2 = "\uf251"
+    Hourglass_3 = "\uf252"
+    Hourglass_4 = "\uf253"
+    Hourglass_5 = "\uf250"
 
 
 def res_path(path: str):
