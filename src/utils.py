@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from github import Github, RateLimitExceededException
 from github.Repository import Repository
 from pathlib import Path
+from psutil import win_service_get
 from requests_cache import DO_NOT_CACHE, install_cache
 from src.logger import LOGGER
 from time import sleep, time
@@ -640,7 +641,6 @@ def does_script_have_updates(repo_name: str, updatable_scripts: list) -> bool:
 
 
 def run_updater():
-
     main_file = os.path.join(executable_dir(), "YimLaunchpad.exe")
     vbs_file = os.path.join(UPDATE_PATH, "run_update.vbs")
     batch_file = os.path.join(UPDATE_PATH, "update.bat")
@@ -654,8 +654,7 @@ def run_updater():
 
     del "{main_file}"
     move "{temp_file}" "{main_file}"
-    cd /d "{executable_dir()}"
-    start "" ./YimLaunchpad.exe
+    start "" "{main_file}"
     rmdir /s /q "{UPDATE_PATH}"
     """
 
@@ -668,12 +667,16 @@ def run_updater():
 
     with open(batch_file, "w") as f:
         f.write(batch_script)
+        f.flush()
+        f.close()
 
     with open(vbs_file, "w") as f:
         f.write(vb_script)
+        f.flush()
+        f.close()
 
     subprocess.Popen(
-        f'wscript.exe "{vbs_file}" "{batch_file}"', shell=True, creationflags=8
+        f'wscript.exe "{vbs_file}" "{batch_file}"', shell=True, creationflags=0x00000008
     )
     sys.exit(0)
 
@@ -722,3 +725,12 @@ def run_detached_process(arg: str):
 
 def to_hex(value: int):
     return f"0x{value & 0xFFFFFFFF if value < 0 else value:X}"
+
+
+def is_service_running(service_name: str) -> bool:
+    try:
+        instance = win_service_get(service_name)
+        service = instance.as_dict()
+        return service is not None and service["status"] == "running"
+    except Exception:
+        return False

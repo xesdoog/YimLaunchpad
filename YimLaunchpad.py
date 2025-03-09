@@ -12,7 +12,7 @@ from src.logger import LOGGER
 
 
 APP_NAME = "YimLaunchpad"
-APP_VERSION = "1.0.0.8"
+APP_VERSION = "1.0.0.9"
 PARENT_PATH = Path(__file__).parent
 ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), APP_NAME)
@@ -119,6 +119,7 @@ is_menu_injected = False
 is_fsl_enabled = False
 game_state_checked = False
 can_auto_inject = False
+be_notif = False
 window = None
 task_status_col = None
 ylp_remote_ver = None
@@ -218,9 +219,9 @@ def add_to_defender_exclusions():
     task_status = ""
 
 
-def get_status_widget_color(task_status):
+def get_status_widget_color(task_status: str):
     if task_status:
-        if any(sub in task_status for sub in ("error", "failed")):
+        if any(sub in task_status.lower() for sub in ("error", "failed", "warning")):
             return ImRed, "Error"
         if is_any_thread_alive():
             return ImYellow, "Busy"
@@ -260,9 +261,9 @@ def check_for_ylp_update():
         ylp_remote_ver = remote_version
         try:
             if APP_VERSION < remote_version:
-                LOG.info("Update available!")
+                LOG.info(f"Version {remote_version} is available!")
                 task_status_col = ImGreen
-                task_status = f"Update {remote_version} is available."
+                task_status = f"Update v{remote_version} is available."
                 gui.toast(f"YimLaunchpad v{remote_version} is available.")
                 ylp_update_avail = True
             elif APP_VERSION == remote_version:
@@ -274,23 +275,21 @@ def check_for_ylp_update():
                     f"No updates were found! v{APP_VERSION} is the latest version."
                 )
                 ylp_update_avail = False
-            elif APP_VERSION > remote_version:
+            else:
                 ylp_update_avail = False
                 if is_dev:
                     task_status_col = None
                     task_status = "Dev branch."
-                    LOG.debug(f"Superior version numbers are ignored in dev branches.")
+                    LOG.debug(f"Custom versions are ignored in dev branches.")
                 else:
-                    LOG.error(
-                        f"Local YimLaunchpad version is {APP_VERSION}. This is not a valid version! Are you a dev or a skid?"
-                    )
+                    LOG.error("Invalid version! Are you a dev or a skid?")
                     task_status_col = ImRed
-                    task_status = "Invalid version detected! Please download YimLaunchpad from the official Github repository."
+                    task_status = "Invalid version! Please download YimLaunchpad from the official Github repository."
         except Exception:
             task_status_col = ImRed
             ylp_update_active = False
             task_status = "An error occured while attempting to check for updates. Check the log for more details."
-            LOG.error(f"An error occured!")
+            LOG.error("An error occured!")
             ylp_update_avail = False
     else:
         task_status_col = ImRed
@@ -309,6 +308,7 @@ def check_for_yim_update():
     global task_status_col
     global yim_update_active
 
+    task_status_col = None
     task_status = "Checking for YimMenu updates..."
     yim_update_active = True
     remote_sha = utils.get_remote_checksum()
@@ -380,6 +380,7 @@ def yimlaunchapd_init():
     global DEFAULT_CFG
     global dll_files
 
+    task_status_col = None
     task_status = "Initializing YimLaunchpad, please wait..."
     if not os.path.exists(CONFIG_PATH):
         utils.save_cfg(CONFIG_PATH, DEFAULT_CFG)
@@ -413,22 +414,31 @@ def download_yim_menu():
 
     if not os.path.exists(YIMDLL_PATH):
         os.makedirs(YIMDLL_PATH)
+    
     try:
-        task_status = "Downloading YimMenu Nightly..."
+        task_status_col = None
+        task_status = "Fetching GitHub repository..."
         yim_update_active = True
+        LOG.info(f"Requesting file from {NIGHTLY_URL}")
         with requests.get(NIGHTLY_URL, stream=True) as response:
             response.raise_for_status()
-            total_size = int(response.headers.get("content-length", 0))
-            current_size = 0
             if response.status_code == 200:
-                LOG.info(f"Requesting file from {NIGHTLY_URL}")
-                LOG.info(f"Total size: {"{:.2f}".format(total_size/1048576)}MB")
+                task_status = "Starting download..."
+                total_size = int(response.headers.get("content-length", 0))
+                total_size_mb = total_size / 1048576
+                current_size = 0
+                LOG.info(f"File size: {total_size_mb:.1f}MB")
                 with open(YIMDLL_FILE, "wb") as f:
-                    LOG.info("Downloading YimMenu Nightly...")
+                    LOG.info("Starting download...")
                     for chunk in response.iter_content(131072):
                         f.write(chunk)
                         current_size += len(chunk)
-                        progress_value = current_size / total_size
+                        if current_size > 0:
+                                progress_value = current_size / total_size
+                                cur_size_mb = current_size / 1048576
+                                task_status = (
+                                    f"Downloading YimMenu Nightly ({cur_size_mb:.1f}/{total_size_mb:.1f}MB)"
+                                )
                 LOG.info(f"Download finished. DLL location: {YIMDLL_FILE}")
                 task_status = "Download complete."
                 yim_update_avail = False
@@ -465,7 +475,6 @@ def download_update():
     if ylp_remote_ver is not None:
         try:
             task_status = "Fetching GitHub repository..."
-
             if not os.path.exists(UPDATE_PATH):
                 os.mkdir(UPDATE_PATH)
                 os.chmod(UPDATE_PATH, 0o777)
@@ -475,21 +484,34 @@ def download_update():
                 stream=True,
             ) as response:
                 response.raise_for_status()
-                total_size = int(response.headers.get("content-length", 0))
-                current_size = 0
                 if response.status_code == 200:
-                    LOG.info(f"Downloading YimLaunchpad {ylp_remote_ver}")
+                    total_size = int(response.headers.get("content-length", 0))
+                    total_size_mb = total_size / 1048576
+                    current_size = 0
+                    LOG.info(
+                        f"Downloading YimLaunchpad v{ylp_remote_ver} ({total_size_mb:.1f}MB)"
+                    )
                     task_status = f"Downloading YimLaunchpad v{ylp_remote_ver}"
                     ylp_update_active = True
-                    with open(f"{UPDATE_PATH}\\YimLaunchpad.exe", "wb") as f:
+                    with open(os.path.join(UPDATE_PATH, "YimLaunchpad.exe"), "wb") as f:
                         for chunk in response.iter_content(131072):
-                            if not gui.glfw.window_should_close(window):
-                                f.write(chunk)
-                                current_size += len(chunk)
-                                progress_value = int(current_size) / int(total_size)
-                            else:
+                            if gui.glfw.window_should_close(window):
                                 LOG.warning("Update canceled by the user.")
+                                f.flush()
+                                f.close()
                                 utils.delete_folder(UPDATE_PATH)
+                                return
+
+                            f.write(chunk)
+                            current_size += len(chunk)
+                            if current_size > 0:
+                                progress_value = int(current_size) / int(total_size)
+                                cur_size_mb = current_size / 1048576
+                                task_status = (
+                                    f"Downloading YimLaunchpad v{ylp_remote_ver} ({cur_size_mb:.1f}/{total_size_mb:.1f}MB)"
+                                )
+
+                        LOG.info("Download complete. Restarting in 3 seconds...")
                         task_status = "Download complete."
                         for i in range(3):
                             task_status = f"Restarting in ({3 - i}) seconds"
@@ -501,14 +523,15 @@ def download_update():
                     )
                     task_status_col = ImRed
                     task_status = (
-                        "Failed to download the update. Check the log for more details."
+                        "Failed to download the update! Check the log for more details."
                     )
         except Exception:
             task_status_col = ImRed
             task_status = "An error occured! Check the log for more details"
             LOG.error(f"An error occured!")
             utils.delete_folder(UPDATE_PATH)
-            sleep(3)
+
+    sleep(3)
     progress_value = 0
     task_status = ""
     task_status_col = None
@@ -652,10 +675,27 @@ def background_worker():
     global can_auto_inject
     global glt_addr
     global gs_addr
+    global be_notif
 
     try:
         Scanner.procmon("GTA5.exe", 0.01)
         game_is_running = Scanner.is_process_running()
+
+        if utils.is_service_running("BEService"):
+            if not be_notif:
+                gui.toast(
+                    "WARNING: BattlEye service is currently running! All background interactions with the game's executable have been disabled.",
+                    button="Dismiss"
+                )
+                be_notif = True
+
+            if task_status == "":
+                task_status_col = ImRed
+                task_status = "WARNING: BattlEye service is running! All background interactions with the game's executable have been disabled."
+            sleep(3)
+            return
+
+        task_status_col = None
         if game_is_running:
             process_id = Scanner.pid
             if not is_menu_injected:
@@ -710,13 +750,14 @@ def background_worker():
             game_state_checked = False
             can_auto_inject = False
     except Exception:
-        LOG.critical(f"Failed to find the game's process!")
+        LOG.critical(f"An exception has occured!")
 
 
 def start_gta(idx: int):
     global task_status, task_status_col
 
     exit_code = 0
+    task_status_col = None
     try:
         LOG.info(f"Attempting to launch GTA V through {LAUNCHERS[idx]}.")
         task_status = (
@@ -766,6 +807,7 @@ def lua_download_regular(repo: Repository, path="", base_path=""):
 
     contents = repo.get_contents(path)
     is_empty = True
+    task_status_col = None
     for content in contents:
         progress_value += 1 / len(contents)
         if content.type == "dir":
@@ -805,6 +847,7 @@ def lua_download_release(repo: Repository):
         return False
 
     latest_release = releases[0]
+    task_status_col = None
     for asset in latest_release.get_assets():
         if str(asset.name).endswith(".zip"):
             response = requests.get(asset.browser_download_url)
@@ -850,9 +893,11 @@ def lua_download(repo: Repository):
 
 def refresh_lua_repo(repo: Repository, index: int):
     global task_status
+    global task_status_col
     global git_requests_left
     global repos
 
+    task_status_col = None
     task_status = f"Refreshing {repo.name}, please wait..."
     refreshed_repo, requests_remaining = utils.refresh_repository(repo)
     git_requests_left = requests_remaining
@@ -1504,7 +1549,7 @@ def OnDraw():
                                     add_to_defender_exclusions,
                                 )
                             gui.tooltip(
-                                "Uses Powershell to add YimLaunchpad.exe and YimLaunchpad's folder to Windows Defender exclusions.\n\nNOTE: If you're using third party anti-virus software, this will not work.",
+                                "Use Powershell to add YimLaunchpad.exe and YimLaunchpad's folder to Windows Defender exclusions.",
                                 None,
                                 0.9,
                             )

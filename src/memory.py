@@ -173,7 +173,7 @@ class Scanner:
         def __repr__(self):
             return f"Pointer<0x{self.address:X}>"
 
-    def find_process(self, process_name: str, interval=0.1):
+    def find_process(self, process_name: str, interval=0.01):
         self.process_name = process_name
         self.pid = self.get_process_id(interval)
         if self.pid:
@@ -183,7 +183,7 @@ class Scanner:
     def is_process_running(self):
         return self.pid not in (None, 0) and psutil.pid_exists(self.pid)
 
-    def get_process_id(self, interval=0.1):
+    def get_process_id(self, interval=0.01):
         for p in psutil.process_iter(["name", "exe", "cmdline"]):
             sleep(interval)
             if (
@@ -197,7 +197,7 @@ class Scanner:
                 return p.pid
         return None
 
-    def procmon(self, proc_name, interval=0.1):
+    def procmon(self, proc_name, interval=0.01):
         if self.pid and self.is_process_running():
             pass
         else:

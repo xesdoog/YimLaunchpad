@@ -277,12 +277,14 @@ def tooltip(text="", font=None, alpha=0.75):
         imgui.pop_style_var()
 
 
-def toast(message="", callback=None):
+def toast(message="", callback=None, *args, **kwargs):
     return notify(
-        "YimLaunchpad",
-        message,
+        title="YimLaunchpad",
+        body=message,
         icon=str(res_path("img/ylp_icon.ico")),
         on_click=callback,
+        *args,
+        **kwargs,
     )
 
 
