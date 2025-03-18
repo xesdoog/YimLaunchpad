@@ -21,7 +21,7 @@ from ctypes.wintypes import BOOL, DWORD
 from inspect import currentframe
 from time import sleep
 from typing import List, Optional
-from src.logger import LOGGER
+from .logger import LOGGER
 
 
 LOG = LOGGER()

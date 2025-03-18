@@ -16,13 +16,13 @@ from github.Repository import Repository
 from pathlib import Path
 from psutil import win_service_get
 from requests_cache import DO_NOT_CACHE, install_cache
-from src.logger import LOGGER
+from .logger import LOGGER
 from time import sleep, time
 
 
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), "YimLaunchpad")
 WORKDIR = os.path.abspath(os.getcwd())
-PARENT_PATH = Path(__file__).parent
+PARENT_PATH = Path(__file__).parent.parent
 ASSETS_PATH = PARENT_PATH / Path(r"assets")
 UPDATE_PATH = os.path.join(LAUNCHPAD_PATH, "update")
 CONFIG_PATH = os.path.join(LAUNCHPAD_PATH, "settings.json")

@@ -17,6 +17,9 @@ USER_OS_RELEASE = release()
 USER_OS_VERSION = version()
 kernel32 = windll.kernel32
 
+if not os.path.exists(LAUNCHPAD_PATH):
+    os.makedirs(LAUNCHPAD_PATH)
+
 
 def executable_dir():
     return os.path.dirname(os.path.abspath(sys.argv[0]))

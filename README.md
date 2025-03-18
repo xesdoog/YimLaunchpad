@@ -64,23 +64,15 @@ A launchpad for YimMenu.
 
 ### Dashboard
 
-![dashboard_x3](https://github.com/user-attachments/assets/f4ed5ecf-3d10-40ad-b86d-85146d071ef3)
+![ylpv2](https://github.com/user-attachments/assets/667e43ad-63c7-412c-96d2-90180073a5ef)
 
-### Lua Scripts (Without GitHub Auth)
+### Lua Scripts
 
-![lua](https://github.com/user-attachments/assets/866f2dde-b743-43e7-a265-df3dd62ad08d)
+![ylpv2_1](https://github.com/user-attachments/assets/1c6253cd-7232-4108-903a-b0d0ba2ff10a)
 
-### Settings (Without GitHub Auth)
+### Settings
 
-![settings](https://github.com/user-attachments/assets/2c53073f-8424-4bcc-b273-9d17da324d1e)
-
-### Lua Scripts (With GitHub Auth)
-
-![lua_1](https://github.com/user-attachments/assets/32a292e9-54f0-4bff-aeeb-e86b11e70ec5)
-
-### Settings (With GitHub Auth)
-
-![settings_1](https://github.com/user-attachments/assets/95038fea-a22d-4ee4-b955-41b9ebcb6899)
+![ylpv2_2](https://github.com/user-attachments/assets/b57aa53f-ab82-4a25-9b00-769abc09d9e6)
 
 ## Licenses
 

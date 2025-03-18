@@ -10,11 +10,12 @@ from cv2 import cvtColor, imread, COLOR_BGR2RGBA, IMREAD_UNCHANGED
 from pathlib import Path
 from PIL import Image
 from pywintypes import error as pywinErr
+from Utils.utils import visit_url
 from win11toast import notify
 from win32gui import GetOpenFileNameW
 
 
-PARENT_PATH = Path(__file__).parent
+PARENT_PATH = Path(__file__).parent.parent
 ASSETS_PATH = PARENT_PATH / Path(r"assets")
 
 
@@ -383,6 +384,14 @@ def separator_text(text, padding=10):
             color,
             1.6,
         )
+
+        draw_list.add_text(
+            cursor_x + padding * 1.5,
+            cursor_y,
+            color,
+            text
+        )
+
         draw_list.add_line(
             (cursor_x + text_width + padding * 2.5),
             (cursor_y + imgui.get_text_line_height() / 2),
@@ -392,9 +401,9 @@ def separator_text(text, padding=10):
             1.6,
         )
 
-    imgui.set_cursor_pos_x(cursor_x + padding)
-    imgui.text(text)
-    imgui.set_cursor_pos_y(cursor_y - (imgui.get_text_line_height() / 3))
+    imgui.set_cursor_pos_y(
+        cursor_y + (imgui.get_text_line_height_with_spacing() / 2)
+    )
 
 
 def image_rounded(texture_id, diameter, uv_a=(0, 0), uv_b=(1, 1)):
@@ -409,10 +418,62 @@ def image_rounded(texture_id, diameter, uv_a=(0, 0), uv_b=(1, 1)):
 
 def clickable_icon(icon, font, tooltip_text, callback, *args):
     imgui.text(icon)
-    tooltip(tooltip_text, font)
+    if tooltip_text:
+        tooltip(tooltip_text, font)
     if imgui.is_item_hovered() and imgui.is_item_clicked(0):
         callback(*args)
 
+
+def header_clickables(font, window_width):
+    clickable_icon_size = imgui.calc_text_size(Icons.GitHub)
+    padding = (window_width - clickable_icon_size.x) / 5
+    imgui.same_line(spacing=padding / 5)
+    clickable_icon(
+        Icons.GitHub,
+        font,
+        "Click to visit YimMenu's GitHub repository",
+        visit_url,
+        "https://github.com/Mr-X-GTA/YimMenu",
+    )
+    imgui.same_line(spacing=padding)
+    clickable_icon(
+        Icons.Extern_Link,
+        font,
+        "Click to visit YimMenu's unknowncheats thread",
+        visit_url,
+        "https://www.unknowncheats.me/forum/grand-theft-auto-v/476972-yimmenu-1-69-b3351.html",
+    )
+    imgui.same_line(spacing=padding)
+    clickable_icon(
+        Icons.GitHub,
+        font,
+        "Click to visit YimLaunchpad's GitHub repository",
+        visit_url,
+        "https://github.com/xesdoog/YimLaunchpad",
+    )
+    imgui.same_line(spacing=padding)
+    clickable_icon(
+        Icons.Extern_Link,
+        font,
+        "Click to visit FSL's unknowncheats thread",
+        visit_url,
+        "https://www.unknowncheats.me/forum/grand-theft-auto-v/616977-fsl-local-gtao-saves.html",
+    )
+    imgui.same_line(spacing=padding)
+    clickable_icon(
+        Icons.GitHub,
+        font,
+        "Click to visit the YimMenu-Lua GitHub organization",
+        visit_url,
+        "https://github.com/YimMenu-Lua",
+    )
+
+
+ylp_note_text = """- YimLaunchpad is not affiliated with YimMenu.
+This project was developed by a member of the community, for the community.
+
+- The developer is not liable for any damages that may occur as a result of the misuse of this software.
+"""
 
 git_more_info_text = """[Q] Why should you login?
 
