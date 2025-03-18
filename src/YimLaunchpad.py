@@ -1,24 +1,23 @@
 import os, sys
+from pathlib import Path
+
+APP_NAME = "YimLaunchpad"
+APP_VERSION = "1.0.1.0"
+PARENT_PATH = Path(__file__).parent
 
 if getattr(sys, "frozen", False):
     import pyi_splash  # type: ignore
+    ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
+else:
+    ASSETS_PATH = PARENT_PATH / Path(r"assets") 
 
 
-from pathlib import Path
 from win32gui import FindWindow, SetForegroundWindow
 from GUI import gui
 from Utils import utils
 from Utils.logger import LOGGER
 from Utils.memory import get_error_message, Scanner, psutil, PTRN_GS, PTRN_LT
 
-APP_NAME = "YimLaunchpad"
-APP_VERSION = "1.0.1.0"
-PARENT_PATH = Path(__file__).parent
-
-if not getattr(sys, "frozen", False):
-    ASSETS_PATH = PARENT_PATH / Path(r"assets") 
-else:
-    ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
 
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), APP_NAME)
 AVATAR_PATH = os.path.join(LAUNCHPAD_PATH, "avatar.png")
