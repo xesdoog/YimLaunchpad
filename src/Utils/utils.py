@@ -22,8 +22,6 @@ from time import sleep, time
 
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), "YimLaunchpad")
 WORKDIR = os.path.abspath(os.getcwd())
-PARENT_PATH = Path(__file__).parent.parent
-ASSETS_PATH = PARENT_PATH / Path(r"assets")
 UPDATE_PATH = os.path.join(LAUNCHPAD_PATH, "update")
 CONFIG_PATH = os.path.join(LAUNCHPAD_PATH, "settings.json")
 YIM_MENU_PATH = os.path.join(os.getenv("APPDATA"), "YimMenu")
@@ -47,10 +45,6 @@ install_cache(
         "github.com/Mr-X-GTA/*": DO_NOT_CACHE,
     },
 )
-
-
-def res_path(path: str):
-    return ASSETS_PATH / Path(path)
 
 
 def executable_dir():
@@ -654,6 +648,7 @@ def run_updater():
 
     del "{main_file}"
     move "{temp_file}" "{main_file}"
+    timeout /t 3 /nobreak >nul
     start "" "{main_file}"
     rmdir /s /q "{UPDATE_PATH}"
     """

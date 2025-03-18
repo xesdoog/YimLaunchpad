@@ -11,12 +11,7 @@ from pathlib import Path
 from PIL import Image
 from pywintypes import error as pywinErr
 from Utils.utils import visit_url
-from win11toast import notify
 from win32gui import GetOpenFileNameW
-
-
-PARENT_PATH = Path(__file__).parent.parent
-ASSETS_PATH = PARENT_PATH / Path(r"assets")
 
 
 class Icons:
@@ -54,10 +49,6 @@ class Icons:
     Hourglass_3 = "\uf252"
     Hourglass_4 = "\uf253"
     Hourglass_5 = "\uf250"
-
-
-def res_path(path: str):
-    return ASSETS_PATH / Path(path)
 
 
 def start_file_dialog(extension: str, multiselect: bool) -> list | str:
@@ -155,7 +146,7 @@ def fb_to_window_factor(window):
 
 
 def new_window(
-    title: str, width: int, height: int, resizable: bool
+    title: str, width: int, height: int, resizable: bool, icon_path
 ) -> tuple[object, object]:
 
     if not glfw.init():
@@ -174,7 +165,7 @@ def new_window(
 
     window = glfw.create_window(int(width), int(height), title, None, None)
     # hand_cursor = glfw.create_standard_cursor(glfw.POINTING_HAND_CURSOR)
-    icon = Image.open(res_path("img/ylp_icon.ico"))
+    icon = Image.open(icon_path)
     icon = icon.convert("RGBA")
     icon_data = np.array(icon, dtype=np.uint8)
     icon_struct = [icon.width, icon.height, icon_data]
@@ -276,17 +267,6 @@ def tooltip(text="", font=None, alpha=0.75):
                 imgui.text(text)
             imgui.pop_text_wrap_pos()
         imgui.pop_style_var()
-
-
-def toast(message="", callback=None, *args, **kwargs):
-    return notify(
-        title="YimLaunchpad",
-        body=message,
-        icon=str(res_path("img/ylp_icon.ico")),
-        on_click=callback,
-        *args,
-        **kwargs,
-    )
 
 
 def status_text(text="", color=None):

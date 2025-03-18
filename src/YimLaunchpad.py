@@ -14,7 +14,12 @@ from Utils.memory import get_error_message, Scanner, psutil, PTRN_GS, PTRN_LT
 APP_NAME = "YimLaunchpad"
 APP_VERSION = "1.0.1.0"
 PARENT_PATH = Path(__file__).parent
-ASSETS_PATH = PARENT_PATH / Path(r"assets")
+
+if not getattr(sys, "frozen", False):
+    ASSETS_PATH = PARENT_PATH / Path(r"assets") 
+else:
+    ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
+
 LAUNCHPAD_PATH = os.path.join(os.getenv("APPDATA"), APP_NAME)
 AVATAR_PATH = os.path.join(LAUNCHPAD_PATH, "avatar.png")
 UPDATE_PATH = os.path.join(LAUNCHPAD_PATH, "update")
@@ -45,6 +50,7 @@ from imgui.integrations.glfw import GlfwRenderer
 from pyinjector import inject
 from threading import Thread
 from time import sleep, time
+from win11toast import notify
 
 LAUNCHPAD_URL = "https://github.com/xesdoog/YimLaunchpad"
 NIGHTLY_URL = (
@@ -179,6 +185,17 @@ def res_path(path: str) -> Path:
     return ASSETS_PATH / Path(path)
 
 
+def toast(message="", callback=None, *args, **kwargs):
+    return notify(
+        title="YimLaunchpad",
+        body=message,
+        icon=str(res_path("img/ylp_icon.ico")),
+        on_click=callback,
+        *args,
+        **kwargs,
+    )
+
+
 def is_any_thread_alive() -> bool:
     return any(thread and not thread.done() for thread in threads.values())
 
@@ -297,7 +314,7 @@ def check_for_ylp_update():
                 LOG.info(f"Version {remote_version} is available!")
                 task_status_col = ImGreen
                 task_status = f"Update v{remote_version} is available."
-                gui.toast(f"YimLaunchpad v{remote_version} is available.")
+                toast(f"YimLaunchpad v{remote_version} is available.")
                 ylp_update_avail = True
             elif APP_VERSION == remote_version:
                 LOG.info(
@@ -351,7 +368,7 @@ def check_for_yim_update():
             if local_sha != remote_sha:
                 LOG.info("Update available!")
                 task_status = "Update available."
-                gui.toast("A new update for YimMenu is available.")
+                toast("A new update for YimMenu is available.")
                 task_status_col = ImGreen
                 yim_update_avail = True
             else:
@@ -587,7 +604,7 @@ def check_lua_repos():
             )
 
         if len(updatable_luas) > 0:
-            gui.toast("Updates are available for some of your installed Lua scripts.")
+            toast("Updates are available for some of your installed Lua scripts.")
 
     except Exception:
         task_status_col = ImRed
@@ -712,7 +729,7 @@ def background_worker():
 
         if utils.is_service_running("BEService"):
             if not be_notif:
-                gui.toast(
+                toast(
                     "WARNING: BattlEye service is currently running! All background interactions with the game's executable have been disabled.",
                     button="Dismiss",
                 )
@@ -935,7 +952,7 @@ def refresh_lua_repo(repo: Repository, index: int):
     dummy_progress()
     task_status = "Done."
     if utils.lua_script_needs_update(refreshed_repo, installed_scripts):
-        gui.toast(f"An update is available for {refreshed_repo.name}")
+        toast(f"An update is available for {refreshed_repo.name}")
     sleep(1)
     task_status = ""
 
@@ -1358,7 +1375,7 @@ def draw_lua_tab():
                 and not is_thread_alive("lua_repos_thread")
             ):
                 if not is_thread_alive("refresh_repo_thread"):
-                    if ImGui.button(f" {Icons.Refresh} Refresh Repo"):
+                    if ImGui.button(f" {Icons.Refresh} Refresh"):
                         start_thread(
                             "refresh_repo_thread",
                             refresh_lua_repo,
@@ -1688,7 +1705,7 @@ def OnDraw():
     global avatar_texture
 
     ImGui.create_context()
-    window = gui.new_window(APP_NAME, 640, 555, False)
+    window = gui.new_window(APP_NAME, 640, 555, False, res_path("img/ylp_icon.ico"))
     impl = GlfwRenderer(window)
     font_scaling_factor = gui.fb_to_window_factor(window)
     io = ImGui.get_io()
