@@ -102,6 +102,9 @@ class Scanner:
             self.scanner: Scanner = scanner
             self.address: int = address
 
+        def is_valid(self):
+            return self.scanner.is_address_valid(self.address)
+
         def add(self, offset: int):
             return self.scanner.Pointer(self.scanner, self.address + offset)
 
@@ -268,8 +271,11 @@ class Scanner:
             kernel32.CloseHandle()
             return hProcess
 
-    def is_address_valid(self, address):
-        return 0 < address <= 0x7FFFFFFFFFFF
+    def is_address_valid(self, address: int):
+        return (
+            address is not None and
+            0 < address < 0x7FFFFFFFFFFF
+        )
 
     def is_memory_readable(self, address):
         if self.process_handle and self.is_address_valid(address):

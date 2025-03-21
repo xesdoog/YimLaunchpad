@@ -457,8 +457,9 @@ This project was developed by a member of the community, for the community.
 
 git_more_info_text = """[Q] Why should you login?
 
-[A] The GitHub API has a limit of only 60 requests per hour for non-authenticated requests. When you login through the app, your rate limit increases to 5000 requests per hour.
+[A] The GitHub API has a limit of only 60 requests per hour for unauthenticated requests. When you login through the app, your rate limit increases to 5000 requests per hour.
 
 [Q] What information will YimLaunchpad have access to when I authorize it?
 
-[A] Read-Only access to your rate limit so the app can track it and display it for you and Read-Only access to your starred repositories so you can see your starred repos in the Lua tab. Before authorizing YimLaunchpad, GitHub will show you what information the app will have access to as well as the type of access."""
+[A] Read-Only access to your rate limit so the app can track it and display it for you and Read-Only access to your starred repositories so you can see your starred repos in the Lua tab.
+Before authorizing YimLaunchpad, GitHub will show you what information the app will have access to as well as the type of access."""

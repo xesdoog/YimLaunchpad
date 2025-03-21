@@ -2,7 +2,7 @@ import os, sys
 from pathlib import Path
 
 APP_NAME = "YimLaunchpad"
-APP_VERSION = "1.0.1.0"
+APP_VERSION = "1.0.1.1"
 PARENT_PATH = Path(__file__).parent
 
 if getattr(sys, "frozen", False):
@@ -753,7 +753,7 @@ def background_worker():
                 if not gs_addr:
                     gs_addr = Scanner.find_pattern(PTRN_GS)
 
-                if gs_addr:
+                if glt_addr.is_valid() and gs_addr.is_valid():
                     try:
                         can_auto_inject = True
                         lifetime = glt_addr.add(0x2).rip().get_dword()
@@ -1000,6 +1000,7 @@ def run_lua_download(repo: Repository):
 
 def draw_dashboard():
     global yim_debug_settings
+    global yim_debug_console
     global launcher_index
     global custom_dlls
     global dll_files
@@ -1056,7 +1057,7 @@ def draw_dashboard():
         ImGui.same_line(spacing=5)
         ImGui.bullet_text("FSL:")
         gui.tooltip(
-            "Because FSL is hosted on UnknownCheats, YimLaunchpad can not download it for you. You can, however, click on the 4th icon at the bottom of the UI to directly visit FSL's unknowncheats thead in your browser.",
+            "Because FSL is hosted on UnknownCheats, YimLaunchpad can not download it for you. You can, however, click on the 4th icon at the top of the UI to directly visit FSL's unknowncheats thead in your browser.",
             main_font,
             0.9,
         )
@@ -1490,7 +1491,7 @@ def draw_settings_tab():
                 )
 
             ImGui.same_line(spacing=10)
-            if ImGui.button(f"  {Icons.Info}  "):
+            if ImGui.button(f"  {Icons.Question}  "):
                 ImGui.open_popup("git_more_info")
             gui.tooltip("Click for more information")
             gui.message_box(
