@@ -4,6 +4,7 @@ import keyring
 import os
 import requests
 import shutil
+import struct
 import subprocess
 import sys
 import webbrowser
@@ -727,5 +728,31 @@ def is_service_running(service_name: str) -> bool:
         instance = win_service_get(service_name)
         service = instance.as_dict()
         return service is not None and service["status"] == "running"
+    except Exception:
+        return False
+
+
+def is_valid_dll(file_path: str):
+    if not file_path.endswith(".dll"):
+        return False
+
+    if not os.path.isfile(file_path):
+        return False
+
+    try:
+        with open(file_path, "rb") as f:
+            if f.read(2) != b"MZ":
+                return False
+
+            f.seek(0x3C)
+            pe_offset = struct.unpack("<I", f.read(4))[0]
+            f.seek(pe_offset)
+            pe_sig = f.read(4)
+            if pe_sig != b"PE\x00\x00":
+                return False
+
+            # probably unnecessary but why not?
+            machine_type = struct.unpack("<H", f.read(2))[0]
+            return machine_type in (0x014C, 0x8664, 0x0200)  # x86, x64, Itanium
     except Exception:
         return False

@@ -2,7 +2,7 @@ import os, sys
 from pathlib import Path
 
 APP_NAME = "YimLaunchpad"
-APP_VERSION = "1.0.1.1"
+APP_VERSION = "1.0.1.2"
 PARENT_PATH = Path(__file__).parent
 
 if getattr(sys, "frozen", False):
@@ -120,6 +120,7 @@ yim_update_avail = False
 yim_update_active = False
 game_is_running = False
 is_menu_injected = False
+is_battleye_running = False
 is_fsl_enabled = False
 game_state_checked = False
 can_auto_inject = False
@@ -134,16 +135,16 @@ gs_addr = None
 glt_addr = None
 task_status = ""
 busy_icon = ""
-auto_exit = utils.read_cfg_item(CONFIG_PATH, "auto_exit_after_injection")
-auto_inject = utils.read_cfg_item(CONFIG_PATH, "auto_inject")
-launchpad_console = utils.read_cfg_item(CONFIG_PATH, "launchpad_console")
+auto_exit: bool = utils.read_cfg_item(CONFIG_PATH, "auto_exit_after_injection")
+auto_inject: bool = utils.read_cfg_item(CONFIG_PATH, "auto_inject")
+launchpad_console: bool = utils.read_cfg_item(CONFIG_PATH, "launchpad_console")
+custom_dlls: bool = utils.read_cfg_item(CONFIG_PATH, "custom_dlls")
+git_logged_in: bool = utils.read_cfg_item(CONFIG_PATH, "git_logged_in")
+git_username: str = utils.read_cfg_item(CONFIG_PATH, "git_username")
+dll_files: list = utils.read_cfg_item(CONFIG_PATH, "dll_files")
+yim_debug_settings: dict = utils.read_cfg_item(YIM_SETTINGS, "debug")
+yim_lua_settings: list = utils.read_cfg_item(YIM_SETTINGS, "lua")
 is_dev = os.path.isfile(os.path.join(os.getcwd(), "3asba"))
-custom_dlls = utils.read_cfg_item(CONFIG_PATH, "custom_dlls")
-dll_files = utils.read_cfg_item(CONFIG_PATH, "dll_files")
-git_logged_in = utils.read_cfg_item(CONFIG_PATH, "git_logged_in")
-git_username = utils.read_cfg_item(CONFIG_PATH, "git_username")
-yim_debug_settings = utils.read_cfg_item(YIM_SETTINGS, "debug")
-yim_lua_settings = utils.read_cfg_item(YIM_SETTINGS, "lua")
 ylp_texture = 0
 avatar_texture = 0
 dll_index = 0
@@ -223,6 +224,14 @@ def set_task_status(msg="", color=None, timeout=2):
     task_status_col = None
 
 
+def reset_status(delay: int):
+    global task_status, task_status_col
+    if delay:
+        sleep(delay)
+    task_status = ""
+    task_status_col = None
+
+
 def dummy_progress():
     global progress_value
 
@@ -262,10 +271,9 @@ def add_to_defender_exclusions():
         task_status_col = ImRed
         task_status = f"Failed to add Windows Defender exlusions."
         pass
-    task_status_col = None
+
     task_status = "Done."
-    sleep(2)
-    task_status = ""
+    reset_status(2)
 
 
 def get_status_widget_color(task_status: str):
@@ -345,9 +353,7 @@ def check_for_ylp_update():
         task_status = (
             "Failed to get the latest GitHub version! Check the log for more details."
         )
-    sleep(3)
-    task_status_col = None
-    task_status = ""
+    reset_status(1)
     ylp_update_active = False
 
 
@@ -381,10 +387,9 @@ def check_for_yim_update():
     else:
         task_status_col = ImRed
         task_status = "Failed to check for updates! See the log for more details."
-    sleep(3)
-    task_status_col = None
+
+    reset_status(1)
     yim_update_active = False
-    task_status = ""
 
 
 def check_saved_config():
@@ -409,9 +414,9 @@ def check_saved_config():
 
 def check_saved_dlls():
     global task_status
+    global dll_files
 
-    if utils.read_cfg_item(CONFIG_PATH, "custom_dlls"):
-        dll_files: list = utils.read_cfg_item(CONFIG_PATH, "dll_files")
+    if custom_dlls:
         if len(dll_files) > 0:
             for entry in dll_files.copy():
                 if not os.path.exists(entry["path"]):
@@ -426,8 +431,6 @@ def yimlaunchapd_init():
     global yim_update_avail
     global task_status
     global task_status_col
-    global DEFAULT_CFG
-    global dll_files
 
     task_status_col = None
     task_status = "Initializing YimLaunchpad, please wait..."
@@ -502,9 +505,8 @@ def download_yim_menu():
         LOG.error(f"An error occured while trying to download YimMenu.")
         task_status_col = ImRed
         task_status = "Download failed! Check the log for more details."
-    sleep(5)
-    task_status_col = None
-    task_status = ""
+
+    reset_status(5)
     progress_value = 0
     yim_update_active = False
 
@@ -576,10 +578,8 @@ def download_update():
             LOG.error(f"An error occured!")
             utils.delete_folder(UPDATE_PATH)
 
-    sleep(3)
+    reset_status(3)
     progress_value = 0
-    task_status = ""
-    task_status_col = None
     ylp_update_active = False
 
 
@@ -611,9 +611,7 @@ def check_lua_repos():
         LOG.error(f"Failed to get repository information!")
         pass
 
-    sleep(5)
-    task_status = ""
-    task_status_col = None
+    reset_status(5)
 
 
 def add_file_with_short_sha(file_path: str):
@@ -637,75 +635,95 @@ def add_file_with_short_sha(file_path: str):
     except Exception:
         task_status_col = ImRed
         task_status = "An error occured! Check the log for more details."
-    sleep(3)
-    task_status_col = None
-    task_status = ""
+    
+    reset_status(3)
 
 
 def inject_dll(dll, process_id):
     global task_status
     global task_status_col
+    global is_menu_injected
     global game_is_running
     global auto_inject
     global auto_exit
     global should_exit
 
-    task_status = "Starting injection..."
+    task_status_col = None
+    if process_id == 0:
+        task_status_col = ImRed
+        LOG.error("Injection failed! Process GTA5.exe was not found.")
+        task_status = "Process not found! Is the game running?"
+        reset_status(3)
+        return
+
+    LOG.info(f"Checking DLL file...")
+    task_status = f"Checking DLL file..."
+    if not os.path.isfile(dll):
+        task_status_col = ImRed
+        LOG.error(
+            f"Injection failed! File {os.path.basename(dll)} was not found!"
+        )
+        task_status = (
+            f"Injection failed! File {os.path.basename(dll)} was not found!"
+        )
+        reset_status(3)
+        return
+
+    if not utils.is_valid_dll(dll):
+        task_status_col = ImRed
+        LOG.error(
+            f"Injection failed! {os.path.basename(dll)} is not a DLL!"
+        )
+        task_status = (
+            f"Injection failed! {os.path.basename(dll)} is not a DLL."
+        )
+        reset_status(3)
+        return
+
     try:
-        if process_id != 0:
-            if os.path.isfile(dll):
-                libHanlde = inject(process_id, dll)
-                task_status = f"Injecting {os.path.basename(dll)} into GTA5.exe..."
-                LOG.info(f"Injecting {dll} into GTA5.exe...")
-                LOG.debug(f"Injected library handle: 0x{libHanlde:X}")
-                dummy_progress()
-                sleep(1)
-                task_status = "Checking if the game is still running after injection..."
-                LOG.debug("Checking if the game is still running after injection...")
-                try:
-                    gta_exit_code = psutil.Process(Scanner.pid).wait(5)
-                except psutil.TimeoutExpired:
-                    gta_exit_code = 0
-                sleep(5)
-                if gta_exit_code == 0:
-                    task_status = "Done."
-                    LOG.debug("Everything seems fine.")
-                    sleep(3)
-                    task_status = ""
-                    if auto_exit:
-                        for i in range(3):
-                            task_status = f"YimLaunchpad will automatically exit in ({3 - i}) seconds."
-                            sleep(1)
-                        should_exit = True
-                else:
-                    str_exit_code = utils.to_hex(gta_exit_code)
-                    ntstatus = get_error_message(gta_exit_code)
-                    task_status_col = ImRed
-                    LOG.warning(
-                        f"The game crashed after injection with exit code: {str_exit_code} ({ntstatus})"
-                    )
-                    task_status = f"The game crashed after injection: {ntstatus}"
-            else:
-                LOG.error(
-                    f"Failed to inject DLL: {os.path.basename(dll)} was not found!"
-                )
-                task_status = (
-                    f"Failed to inject DLL: {os.path.basename(dll)} was not found!"
-                )
-                task_status_col = ImRed
-        else:
+        task_status = f"Injecting {os.path.basename(dll)} into GTA5.exe..."
+        libHanlde = inject(process_id, dll)
+        dummy_progress()
+        Scanner.modules = Scanner.get_process_modules()
+        is_menu_injected = Scanner.is_module_loaded("YimMenu.dll")
+        sleep(1)
+        LOG.info(f"DLL injected.")
+        LOG.debug(f"Injected library handle: 0x{libHanlde:X}")
+
+        task_status = "Checking if the game is still running after injection..."
+        LOG.debug("Checking if the game is still running after injection...")
+        try:
+            gta_exit_code = psutil.Process(Scanner.pid).wait(5)
+        except psutil.TimeoutExpired:
+            gta_exit_code = 0
+        sleep(5)
+
+        if gta_exit_code != 0:
+            str_exit_code = utils.to_hex(gta_exit_code)
+            ntstatus = get_error_message(gta_exit_code)
             task_status_col = ImRed
-            LOG.warning("Injection failed! Process GTA5.exe was not found.")
-            task_status = "Process not found! Is the game running?"
+            LOG.warning(
+                f"The game crashed after injection with exit code: {str_exit_code} ({ntstatus})"
+            )
+            task_status = f"The game crashed after injection: {ntstatus}"
+            reset_status(3)
+            return
+
+        task_status = "Done."
+        LOG.debug("Everything seems fine.")
+
+        if auto_exit:
+            for i in range(3):
+                sleep(1)
+                task_status = f"YimLaunchpad will automatically exit in ({3 - i}) seconds."
+            should_exit = True
+
     except Exception:
         task_status_col = ImRed
         LOG.critical(f"An exception has occured!")
         task_status = "Injection failed! Check the log for more details."
 
-    if not should_exit:
-        sleep(3)
-        task_status = ""
-        task_status_col = None
+    reset_status(3)
 
 
 def background_worker():
@@ -714,6 +732,7 @@ def background_worker():
     global process_id
     global game_is_running
     global is_menu_injected
+    global is_battleye_running
     global is_fsl_enabled
     global should_exit
     global game_state_checked
@@ -725,31 +744,40 @@ def background_worker():
     try:
         Scanner.procmon("GTA5.exe", 0.01)
         game_is_running = Scanner.is_process_running()
+        is_battleye_running = utils.is_service_running("BEService")
 
-        if utils.is_service_running("BEService"):
+        if is_battleye_running:
             if not be_notif:
                 toast(
-                    "WARNING: BattlEye service is currently running! All background interactions with the game's executable have been disabled.",
+                    "WARNING: BattlEye service is currently running! Background interactions with the game's executable have been disabled.",
                     button="Dismiss",
+                )
+                LOG.warning(
+                    "BattlEye service is currently running! Background interactions with the game's executable have been disabled."
                 )
                 be_notif = True
 
             if task_status == "":
                 task_status_col = ImRed
-                task_status = "WARNING: BattlEye service is running! All background interactions with the game's executable have been disabled."
+                task_status = "WARNING: BattlEye service is running! Background interactions with the game's executable have been disabled."
             sleep(3)
             return
 
         task_status_col = None
         if game_is_running:
             process_id = Scanner.pid
+
             if not is_menu_injected:
                 is_menu_injected = Scanner.is_module_loaded("YimMenu.dll")
+
             if not is_fsl_enabled:
                 is_fsl_enabled = Scanner.is_module_loaded("version.dll")
+
             if auto_inject and not is_menu_injected and not game_state_checked:
+
                 if not glt_addr:
                     glt_addr = Scanner.find_pattern(PTRN_LT)
+
                 if not gs_addr:
                     gs_addr = Scanner.find_pattern(PTRN_GS)
 
@@ -780,11 +808,12 @@ def background_worker():
                                 for i in range(3):
                                     task_status = f"YimMenu will be automatically injected in ({3 - i})"
                                     sleep(1)
-                                if not is_menu_injected and gs == 5:
-                                    inject_dll(YIMDLL_FILE, process_id)
-                                    is_menu_injected = True
-                                    game_state_checked = True
-                                    can_auto_inject = False
+
+                                inject_dll(YIMDLL_FILE, process_id)
+                                is_menu_injected = True
+                                game_state_checked = True
+                                can_auto_inject = False
+
                     except Exception:
                         LOG.error("An error occured!")
                         game_state_checked = True
@@ -840,9 +869,7 @@ def start_gta(idx: int):
         task_status = f"Unable to start the game!"
 
     if not auto_inject:
-        sleep(3)
-        task_status = ""
-        task_status_col = None
+        reset_status(3)
 
 
 def lua_download_regular(repo: Repository, path="", base_path=""):
@@ -876,9 +903,8 @@ def lua_download_regular(repo: Repository, path="", base_path=""):
     else:
         task_status_col = ImRed
         task_status = "This repository doesn't have any Lua files."
-    sleep(3)
-    task_status_col = None
-    task_status = ""
+
+    reset_status(3)
 
 
 def lua_download_release(repo: Repository):
@@ -913,9 +939,7 @@ def lua_download_release(repo: Repository):
                     if is_empty:
                         task_status_col = ImRed
                         task_status = "This release doesn't have any Lua files."
-                        sleep(3)
-                        task_status_col = None
-                        task_status = ""
+                        reset_status(3)
                         return False
 
                     task_status = "Download complete."
@@ -1010,7 +1034,7 @@ def draw_dashboard():
         gui.separator_text("YimMenu")
 
     with ImGui.font(small_font):
-        ImGui.bullet_text("State:")
+        ImGui.bullet_text("Menu State:")
         ImGui.same_line()
         ImGui.text_colored(
             ("Injected." if is_menu_injected else "Not Injected."),
@@ -1045,7 +1069,7 @@ def draw_dashboard():
         gui.separator_text("GTA V")
 
     with ImGui.font(small_font):
-        ImGui.bullet_text("Game Status:")
+        ImGui.bullet_text("Game State:")
         ImGui.same_line()
         ImGui.text_colored(
             "Running." if is_fsl_enabled else "Not running.",
@@ -1074,6 +1098,19 @@ def draw_dashboard():
             0,
             0.88,
         )
+        if game_is_running:
+            ImGui.same_line(spacing=5)
+            ImGui.bullet_text("BattlEye:")
+            ImGui.same_line()
+            be_label = "Running!" if is_battleye_running else "Not Running."
+
+            ImGui.text_colored(
+                be_label,
+                1 if is_battleye_running else 0,
+                0 if is_battleye_running else 1,
+                0,
+                0.88,
+            )
         ImGui.dummy(1, 5)
 
     if game_is_running:
@@ -1262,7 +1299,7 @@ def draw_lua_tab():
                 item_width = ImGui.calc_text_size(
                     repo.name
                 ).x
-                ImGui.same_line(spacing=360 - item_width)
+                ImGui.same_line(spacing=350 - item_width)
                 script_has_update = (
                     utils.does_script_have_updates(
                         repo.name, updatable_luas
