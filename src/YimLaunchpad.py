@@ -2,7 +2,7 @@ import os, sys
 from pathlib import Path
 
 APP_NAME = "YimLaunchpad"
-APP_VERSION = "1.0.1.3"
+APP_VERSION = "1.0.1.4"
 MEI_PATH = None
 
 if getattr(sys, "frozen", False):
@@ -725,10 +725,6 @@ def inject_dll(dll, process_id):
 
 
 def background_worker():
-    if is_thread_alive("ylp_init_thread"):
-        sleep(0.1)
-        return
-
     global task_status
     global task_status_col
     global process_id
@@ -1880,6 +1876,7 @@ def OnDraw():
             gui.header_clickables(small_font, win_w)
             ImGui.spacing()
             if not is_thread_alive("ylp_init_thread"):
+                start_thread("bachground_thread", background_worker)
                 ImGui.columns(2, "Main Layout", border=True)
                 ImGui.set_column_width(0, 160)
                 render_sidebar(180, win_h - 90)
@@ -1935,7 +1932,6 @@ if __name__ == "__main__":
             pyi_splash.close()
 
         start_thread("ylp_init_thread", yimlaunchapd_init)
-        start_thread("bachground_thread", background_worker)
         Thread(target=animate_icon, daemon=True).start()
         OnDraw()
     finally:
