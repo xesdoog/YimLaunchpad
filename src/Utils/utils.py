@@ -11,10 +11,10 @@ import webbrowser
 import winreg
 
 from bs4 import BeautifulSoup
+from ctypes import WinDLL
 from datetime import datetime, timezone
 from github import Github, RateLimitExceededException
 from github.Repository import Repository
-from pathlib import Path
 from psutil import win_service_get
 from requests_cache import DO_NOT_CACHE, install_cache
 from .logger import LOGGER
@@ -34,6 +34,7 @@ CLIENT_ID = "Iv23lij2DMB5JgpS7rK7"
 AUTH_TOKEN = None
 LOG = LOGGER()
 
+kernel32 = WinDLL("kernel32", use_last_error=True)
 
 install_cache(
     cache_name="yimlaunchpad_cache",
@@ -401,8 +402,8 @@ def get_launchpad_version():
         charLength = len(result)
         latest_version = result[charLength - 7 :]
         return latest_version
-    except Exception as e:
-        LOG.info(f"Failed to get the latest GitHub version! Traceback: {e}")
+    except Exception:
+        LOG.error(f"Failed to get the latest GitHub version!")
         return None
 
 
@@ -635,7 +636,7 @@ def does_script_have_updates(repo_name: str, updatable_scripts: list) -> bool:
     return len(updatable_scripts) > 0 and repo_name in updatable_scripts
 
 
-def run_updater():
+def run_updater(mei_path=None):
     main_file = os.path.join(executable_dir(), "YimLaunchpad.exe")
     vbs_file = os.path.join(UPDATE_PATH, "run_update.vbs")
     batch_file = os.path.join(UPDATE_PATH, "update.bat")
@@ -647,10 +648,16 @@ def run_updater():
     tasklist | find /i "YimLaunchpad.exe" >nul
     if not errorlevel 1 goto waitloop
 
-    del "{main_file}"
-    move "{temp_file}" "{main_file}"
+    {"if exist \"" + mei_path + "\" (" if mei_path else ""}
+    echo Waiting for PyInstaller temp folder to be released...
+    :waitmeipass
+    timeout /t 2 /nobreak >nul
+    (rd "{mei_path}" 2>nul) || goto waitmeipass
+    {")" if mei_path else ""}
+
+    move /Y "{temp_file}" "{main_file}"
     timeout /t 3 /nobreak >nul
-    start "" "{main_file}"
+    start /b "" "{main_file}"
     rmdir /s /q "{UPDATE_PATH}"
     """
 
@@ -723,6 +730,18 @@ def to_hex(value: int):
     return f"0x{value & 0xFFFFFFFF if value < 0 else value:X}"
 
 
+def splash_cleanup(mei_path):
+    if not mei_path:
+        return
+    
+    zlib_path = os.path.join(mei_path, "__splash", "zlib.dll")
+    if os.path.exists(zlib_path):
+        try:
+            kernel32.FreeLibrary(WinDLL(zlib_path)._handle)
+        except Exception:
+            LOG.error("Failed to unload zlib.dll!")
+
+
 def is_service_running(service_name: str) -> bool:
     try:
         instance = win_service_get(service_name)
@@ -733,10 +752,10 @@ def is_service_running(service_name: str) -> bool:
 
 
 def is_valid_dll(file_path: str):
-    if not file_path.endswith(".dll"):
-        return False
-
     if not os.path.isfile(file_path):
+        return False
+    
+    if not file_path.endswith(".dll"):
         return False
 
     try:
@@ -751,8 +770,7 @@ def is_valid_dll(file_path: str):
             if pe_sig != b"PE\x00\x00":
                 return False
 
-            # probably unnecessary but why not?
             machine_type = struct.unpack("<H", f.read(2))[0]
-            return machine_type in (0x014C, 0x8664, 0x0200)  # x86, x64, Itanium
+            return machine_type in (0x014C, 0x8664)  # x86, x64
     except Exception:
         return False

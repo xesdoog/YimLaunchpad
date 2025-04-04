@@ -148,8 +148,8 @@ class Scanner:
                     return data[:null_pos].decode("utf-8", errors="ignore")
                 else:
                     return data.decode("utf-8", errors="ignore")
-            except Exception as e:
-                print(f"Failed to read string at 0x{self.address:X}: {e}")
+            except Exception:
+                LOG.error(f"Failed to read string at 0x{self.address:X}")
                 return None
 
         def as_const_char_p(self) -> str: # LPCSTR

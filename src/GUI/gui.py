@@ -7,7 +7,6 @@ import win32con
 
 from contextlib import contextmanager
 from cv2 import cvtColor, imread, COLOR_BGR2RGBA, IMREAD_UNCHANGED
-from pathlib import Path
 from PIL import Image
 from pywintypes import error as pywinErr
 from Utils.utils import visit_url
@@ -95,7 +94,6 @@ def draw_image(path: str):
     try:
         img = imread(path, IMREAD_UNCHANGED)
         if img is None:
-            print("Error loading image.")
             return 0, 0, 0
 
         img = cvtColor(img, COLOR_BGR2RGBA)
@@ -125,13 +123,11 @@ def draw_image(path: str):
 
         error = gl.glGetError()
         if error != gl.GL_NO_ERROR:
-            print(f"OpenGL error: {error}")
             return 0, 0, 0
 
         gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
         return texture, w, h
-    except Exception as e:
-        print(f"Unhandled exception: {e}")
+    except Exception:
         return 0, 0, 0
 
 

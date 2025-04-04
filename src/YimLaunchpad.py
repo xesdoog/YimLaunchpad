@@ -2,14 +2,15 @@ import os, sys
 from pathlib import Path
 
 APP_NAME = "YimLaunchpad"
-APP_VERSION = "1.0.1.2"
-PARENT_PATH = Path(__file__).parent
+APP_VERSION = "1.0.1.3"
+MEI_PATH = None
 
 if getattr(sys, "frozen", False):
     import pyi_splash  # type: ignore
-    ASSETS_PATH = PARENT_PATH / Path(r"src/assets")
+    MEI_PATH = sys._MEIPASS
+    ASSETS_PATH = Path(MEI_PATH) / "src/assets"
 else:
-    ASSETS_PATH = PARENT_PATH / Path(r"assets") 
+    ASSETS_PATH = Path(__file__).parent / "assets"
 
 
 from win32gui import FindWindow, SetForegroundWindow
@@ -454,9 +455,6 @@ def yimlaunchapd_init():
     LOG.info("Initialization complete.")
 
 
-start_thread("ylp_init_thread", yimlaunchapd_init)
-
-
 def download_yim_menu():
     global task_status
     global progress_value
@@ -727,6 +725,10 @@ def inject_dll(dll, process_id):
 
 
 def background_worker():
+    if is_thread_alive("ylp_init_thread"):
+        sleep(0.1)
+        return
+
     global task_status
     global task_status_col
     global process_id
@@ -1499,9 +1501,7 @@ def draw_settings_tab():
         )
 
 
-    ylpcon_clicked, launchpad_console = ImGui.checkbox(
-        f"{launchpad_console and "Disable" or "Enable"} Console", launchpad_console
-    )
+    ylpcon_clicked, launchpad_console = ImGui.checkbox("Launchpad Console", launchpad_console)
     gui.tooltip(
         f"{launchpad_console and "Disable" or "Enable"} YimLaunchpad's debug console."
     )
@@ -1513,7 +1513,14 @@ def draw_settings_tab():
             LOG.show_console()
         else:
             LOG.hide_console()
+
+    ImGui.bullet_text(f"Log backup size: {LOG.archive_size_str}")
+    if LOG.archive_size >= 1e4:
+        ImGui.same_line()
+        if ImGui.small_button(f"{Icons.Trash} Clear"):
+            LOG.clear_archive()
     
+
     ImGui.dummy(1, 10)
     with ImGui.font(title_font):
         gui.separator_text("GitHub")
@@ -1613,6 +1620,7 @@ def draw_settings_tab():
         else:
             username_alpha = 0.7
 
+        ImGui.same_line(spacing=20)
         if ImGui.button(f"{Icons.Close} Logout"):
             GitOAuth.logout()
             run_task_status_update(
@@ -1872,7 +1880,6 @@ def OnDraw():
             gui.header_clickables(small_font, win_w)
             ImGui.spacing()
             if not is_thread_alive("ylp_init_thread"):
-                start_thread("bachground_thread", background_worker)
                 ImGui.columns(2, "Main Layout", border=True)
                 ImGui.set_column_width(0, 160)
                 render_sidebar(180, win_h - 90)
@@ -1927,8 +1934,11 @@ if __name__ == "__main__":
         if getattr(sys, "frozen", False):
             pyi_splash.close()
 
+        start_thread("ylp_init_thread", yimlaunchapd_init)
+        start_thread("bachground_thread", background_worker)
         Thread(target=animate_icon, daemon=True).start()
         OnDraw()
     finally:
+        utils.splash_cleanup(MEI_PATH)
         if pending_update:
-            utils.run_updater()
+            utils.run_updater(os.path.basename(MEI_PATH))

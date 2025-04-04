@@ -1,6 +1,5 @@
 import inspect
 import logging
-import logging.handlers
 import os
 import sys
 
@@ -80,14 +79,29 @@ class LOGGER:
         self.file_handler.setFormatter(self.formatter)
         self.logger.addHandler(self.file_handler)
         self.console_handler = None
-    
+
+        self.archive_path = self.file_handler.archive_path
+        self.archive_size = 0
+        self.archive_size_str = "0KB"
+
+        if os.path.exists(self.archive_path):
+            for file in os.listdir(self.archive_path):
+                full_path = os.path.join(self.archive_path, file)
+                if os.path.isfile(full_path):
+                    self.archive_size += os.path.getsize(full_path)
+            self.archive_size_str = (
+                self.archive_size < 1e6
+                and f"{self.archive_size / 1024:.0f}KB"
+                or f"{self.archive_size / 1048576:.0f}MB"
+            )
+
     class ConsoleFormatter:
         LEVEL_COLORS = {
             "DEBUG": "\x1b[34m",
             "INFO": "\x1b[32m",
             "WARNING": "\x1b[33;20m",
             "ERROR": "\x1b[31;20m",
-            "CRITICAL": "\x1b[31;1m"
+            "CRITICAL": "\x1b[31;1m",
         }
         CALLER_COLOR = "\x1b[1;30m"
         DEFAULT_COLOR = "\x1b[0m"
@@ -96,7 +110,9 @@ class LOGGER:
             self.formatter = LOGGER().formatter
 
         def format(self, record):
-            record.caller_name = f"{self.CALLER_COLOR}{record.caller_name}{self.DEFAULT_COLOR}"
+            record.caller_name = (
+                f"{self.CALLER_COLOR}{record.caller_name}{self.DEFAULT_COLOR}"
+            )
             level_color = self.LEVEL_COLORS.get(record.levelname, "\x1b[37m")
             record.levelname = f"{level_color}{record.levelname}{self.DEFAULT_COLOR}"
             return self.formatter.format(record)
@@ -109,9 +125,14 @@ class LOGGER:
             kernel32.SetConsoleTitleW("YimLaunchpad")
 
             # Console colors
-            if getattr(sys, "frozen", False) or os.environ.get("ENABLE_ANSI", "0") == "1":
+            if (
+                getattr(sys, "frozen", False)
+                or os.environ.get("ENABLE_ANSI", "0") == "1"
+            ):
                 # https://learn.microsoft.com/en-us/windows/console/setconsolemode
-                kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 0x0001 | 0x0002 | 0x0004)
+                kernel32.SetConsoleMode(
+                    kernel32.GetStdHandle(-11), 0x0001 | 0x0002 | 0x0004
+                )
 
         if not self.console_handler:
             self.console_handler = logging.StreamHandler(sys.stdout)
@@ -130,6 +151,18 @@ class LOGGER:
             self.logger.removeHandler(self.console_handler)
             self.console_handler = None
 
+    def clear_archive(self):
+        try:
+            for file in os.listdir(self.archive_path):
+                file_path = os.path.join(self.archive_path, file)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+        except Exception:
+            self.error("Unable to clear the log archive!")
+
+        self.archive_size = 0
+        self.archive_size_str = "0KB"
+
     def debug(self, msg: str):
         self.logger.debug(msg)
 
@@ -143,7 +176,9 @@ class LOGGER:
         self.logger.error(msg, exc_info=1 if sys.exc_info()[0] is not None else 0)
 
     def critical(self, msg: str):
-        self.logger.critical(msg, stack_info=True, exc_info=1 if sys.exc_info()[0] is not None else 0)
+        self.logger.critical(
+            msg, stack_info=True, exc_info=1 if sys.exc_info()[0] is not None else 0
+        )
 
     def on_init(self):
         with open(LOG_FILE, "a") as f:
@@ -160,6 +195,7 @@ __  ___           __                           __                    __
 /_/_/_/ /_/ /_/_____/\__,_/\__,_/_/ /_/\___/_/ /_/ .___/\__,_/\__,_/   
                                                 /_/                    
 """
+
 
 def log_init_str(app_version: str):
     return f"""
