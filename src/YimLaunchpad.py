@@ -2,7 +2,7 @@ import os, sys
 from pathlib import Path
 
 APP_NAME = "YimLaunchpad"
-APP_VERSION = "1.0.1.4"
+APP_VERSION = "1.0.1.5"
 MEI_PATH = None
 
 if getattr(sys, "frozen", False):
@@ -26,12 +26,12 @@ UPDATE_PATH = os.path.join(LAUNCHPAD_PATH, "update")
 LOG = LOGGER(APP_VERSION)
 
 
-this_window = FindWindow(None, APP_NAME)
-if this_window != 0:
+hWindow = FindWindow(None, APP_NAME)
+if hWindow != 0:
     LOG.warning(
         f"{APP_NAME} is aleady running! Only one instance can be launched at once.\n"
     )
-    SetForegroundWindow(this_window)
+    SetForegroundWindow(hWindow)
     sys.exit(0)
 
 if not os.path.exists(LAUNCHPAD_PATH):
@@ -122,7 +122,7 @@ yim_update_active = False
 game_is_running = False
 is_menu_injected = False
 is_battleye_running = False
-is_fsl_enabled = False
+# is_fsl_enabled = False
 game_state_checked = False
 can_auto_inject = False
 be_notif = False
@@ -731,7 +731,7 @@ def background_worker():
     global game_is_running
     global is_menu_injected
     global is_battleye_running
-    global is_fsl_enabled
+    # global is_fsl_enabled
     global should_exit
     global game_state_checked
     global can_auto_inject
@@ -766,10 +766,10 @@ def background_worker():
             process_id = Scanner.pid
 
             if not is_menu_injected:
-                is_menu_injected = Scanner.is_module_loaded("YimMenu.dll")
+                is_menu_injected = Scanner.is_yimmenu_injected()
 
-            if not is_fsl_enabled:
-                is_fsl_enabled = Scanner.is_module_loaded("version.dll")
+            # if not is_fsl_enabled:
+            #     is_fsl_enabled = Scanner.is_fsl_enabled()
 
             if auto_inject and not is_menu_injected and not game_state_checked:
 
@@ -818,7 +818,7 @@ def background_worker():
                         can_auto_inject = False
         else:
             is_menu_injected = False
-            is_fsl_enabled = False
+            # is_fsl_enabled = False
             game_state_checked = False
             can_auto_inject = False
     except Exception:
@@ -1070,32 +1070,32 @@ def draw_dashboard():
         ImGui.bullet_text("Game State:")
         ImGui.same_line()
         ImGui.text_colored(
-            "Running." if is_fsl_enabled else "Not running.",
-            0 if is_fsl_enabled else 1,
-            1 if is_fsl_enabled else 0,
+            "Running." if game_is_running else "Not running.",
+            0 if game_is_running else 1,
+            1 if game_is_running else 0,
             0,
             0.88,
         )
-        ImGui.same_line(spacing=5)
-        ImGui.bullet_text("FSL:")
-        gui.tooltip(
-            "Because FSL is hosted on UnknownCheats, YimLaunchpad can not download it for you. You can, however, click on the 4th icon at the top of the UI to directly visit FSL's unknowncheats thead in your browser.",
-            main_font,
-            0.9,
-        )
-        ImGui.same_line()
-        if game_is_running:
-            fsl_label = "Enabled." if is_fsl_enabled else "Disabled."
-        else:
-            fsl_label = "Unknown"
+        # ImGui.same_line(spacing=5)
+        # ImGui.bullet_text("FSL:")
+        # gui.tooltip(
+        #     "Because FSL is hosted on UnknownCheats, YimLaunchpad can not download it for you. You can, however, click on the 4th icon at the top of the UI to directly visit FSL's unknowncheats thead in your browser.",
+        #     main_font,
+        #     0.9,
+        # )
+        # ImGui.same_line()
+        # if game_is_running:
+        #     fsl_label = "Enabled." if is_fsl_enabled else "Disabled."
+        # else:
+        #     fsl_label = "Unknown"
 
-        ImGui.text_colored(
-            fsl_label,
-            0 if is_fsl_enabled else 1,
-            1 if is_fsl_enabled else 0,
-            0,
-            0.88,
-        )
+        # ImGui.text_colored(
+        #     fsl_label,
+        #     0 if is_fsl_enabled else 1,
+        #     1 if is_fsl_enabled else 0,
+        #     0,
+        #     0.88,
+        # )
         if game_is_running:
             ImGui.same_line(spacing=5)
             ImGui.bullet_text("BattlEye:")

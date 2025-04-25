@@ -643,6 +643,10 @@ def run_updater(mei_path=None):
     temp_file = os.path.join(UPDATE_PATH, "YimLaunchpad.exe")
 
     batch_script = f"""@echo off
+    setlocal enableextensions
+    set RETRIES=3
+    set WAIT=2
+
     :waitloop
     timeout /t 1 /nobreak >nul
     tasklist | find /i "YimLaunchpad.exe" >nul
@@ -656,9 +660,17 @@ def run_updater(mei_path=None):
     {")" if mei_path else ""}
 
     move /Y "{temp_file}" "{main_file}"
-    timeout /t 3 /nobreak >nul
-    start /b "" "{main_file}"
-    rmdir /s /q "{UPDATE_PATH}"
+
+    :retrylaunch
+    timeout /t %WAIT% /nobreak >nul
+    start "" /wait "{main_file}"
+    if errorlevel 1 (
+        set /a RETRIES-=1
+        if %RETRIES% GTR 0 goto retrylaunch
+    ) else (
+        echo App started successfully.
+        rmdir /s /q "{UPDATE_PATH}"
+    )
     """
 
     vb_script = (

@@ -227,6 +227,12 @@ class Scanner:
             return self.modules is not None and module_name.lower() in self.modules
         return False
 
+    def is_yimmenu_injected(self):
+        return self.is_module_loaded("YimMenu.dll")
+
+    def is_fsl_enabled(self):
+        return self.is_module_loaded("WINMM.dll")
+
     def get_base_address(self) -> int:
         lphModule = (PVOID * 1024)()
         lpcbNeeded = DWORD()
@@ -248,7 +254,7 @@ class Scanner:
             self.process_handle, module_handle, byref(module_info), sizeof(module_info)
         ):
             error = WinError(get_last_error())
-            LOG.critical(f"[SCANNER] Failed to retrieve module info: {error}")
+            LOG.critical(f"[SCANNER] Failed to retrieve module information: {error}")
             return None
 
         return module_info
@@ -258,13 +264,16 @@ class Scanner:
         if not module_handle:
             LOG.critical("[SCANNER] Failed to retrieve module handle!")
             return 0
+
         module_info = self.get_module_info(module_handle)
         return module_info.SizeOfImage
 
     def get_process_handle(self):
         if self.pid:
             hProcess = kernel32.OpenProcess(
-                PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION,
+                PROCESS_VM_READ |
+                PROCESS_QUERY_INFORMATION |
+                PROCESS_VM_OPERATION,
                 False,
                 self.pid,
             )
