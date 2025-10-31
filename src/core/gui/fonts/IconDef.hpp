@@ -1,0 +1,32 @@
+#pragma once
+
+#define ICON_MIN_FA 0xE900
+#define ICON_MAX_FA 0xEAB0
+
+#define ICON_FA_COPY          "\xEE\xA4\x80"
+#define ICON_FA_DOWNLOAD      "\xEE\xA5\xA0"
+#define ICON_FA_UPLOAD        "\xEE\xA5\xA1"
+#define ICON_FA_FLOPPY_DISK   "\xEE\xA5\xA2"
+#define ICON_FA_DRIVE         "\xEE\xA5\xA3"
+#define ICON_FA_DATABASE      "\xEE\xA5\xA4"
+#define ICON_FA_SPINNER2      "\xEE\xA5\xBB"
+#define ICON_FA_SPINNER8      "\xEE\xA6\x81"
+#define ICON_FA_SPINNER9      "\xEE\xA6\x82"
+#define ICON_FA_SPINNER10     "\xEE\xA6\x83"
+#define ICON_FA_WRENCH        "\xEE\xA6\x91"
+#define ICON_FA_EQUALIZER     "\xEE\xA6\x92"
+#define ICON_FA_COG           "\xEE\xA6\x94"
+#define ICON_FA_COGS          "\xEE\xA6\x95"
+#define ICON_FA_BUG           "\xEE\xA6\x99"
+#define ICON_FA_SWITCH        "\xEE\xA6\xB6"
+#define ICON_FA_WARNING       "\xEE\xA8\x87"
+#define ICON_FA_NOTIFICATION  "\xEE\xA8\x88"
+#define ICON_FA_QUESTION      "\xEE\xA8\x89"
+#define ICON_FA_PLUS          "\xEE\xA8\x8A"
+#define ICON_FA_MINUS         "\xEE\xA8\x8B"
+#define ICON_FA_INFO          "\xEE\xA8\x8C"
+#define ICON_FA_CANCEL_CIRCLE "\xEE\xA8\x8D"
+#define ICON_FA_BLOCKED       "\xEE\xA8\x8E"
+#define ICON_FA_CHECKMARK     "\xEE\xA8\x90"
+#define ICON_FA_CHECKMARK2    "\xEE\xA8\x91"
+#define ICON_FA_GITHUB        "\xEE\xAA\xB0"

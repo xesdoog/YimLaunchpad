@@ -1,8 +1,12 @@
 **/__pycache__
 **/.venv
+**/out
+**/build
+*.py
 *.pyc
 *.pyi
 *.log
-*.code-workspace
+*.vs
 *.ini
 *.json
+*.lua
