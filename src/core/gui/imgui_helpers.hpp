@@ -1,6 +1,7 @@
 #pragma once
 
 #include <common.hpp>
+#include <imgui_internal.h>
 #include "renderer.hpp"
 
 

@@ -40,9 +40,14 @@ namespace YLP
 			GetInstance().SetResizingImpl(lParam);
 		}
 
-		static bool IsFocused()
+		static const std::atomic<bool> IsFocused()
 		{
 			return GetInstance().IsFocusedImpl();
+		}
+
+		static HWND GetWindowHandle()
+		{
+			return GetInstance().m_HWND;
 		}
 
 		static ImVec2 GetWindowSize()
@@ -57,7 +62,8 @@ namespace YLP
 		bool InitImpl();
 		void DrawImpl();
 		void SetResizingImpl(LPARAM lParam);
-		bool IsFocusedImpl() const;
+
+		std::atomic<bool> IsFocusedImpl() const;
 
 		ImVec2 GetWindowSizeImpl();
 

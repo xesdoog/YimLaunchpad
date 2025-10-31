@@ -1,17 +1,25 @@
 #pragma once
 
 #include <windows.h>
+
+#include <atomic>
 #include <chrono>
 #include <functional>
-#include <imgui_internal.h>
+#include <filesystem>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <string>
+
+
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include <imgui.h>
 
 
 namespace YLP
 {
     extern HINSTANCE g_Instance;
+    extern std::filesystem::path g_ProjectPath;
 }
 
 namespace Fonts
@@ -26,12 +34,15 @@ namespace Fonts
 
 #include "core/logger.hpp"
 
-#define LOG_INFO(fmt, ...) Logger::Log(Logger::eLogLevel::Info, fmt, ##__VA_ARGS__)
-#define LOG_WARN(fmt, ...) Logger::Log(Logger::eLogLevel::Warn, fmt, ##__VA_ARGS__)
-#define LOG_ERROR(fmt, ...) Logger::Log(Logger::eLogLevel::Error, fmt, ##__VA_ARGS__)
-#define LOG_DEBUG(fmt, ...) Logger::Log(Logger::eLogLevel::Debug, fmt, ##__VA_ARGS__)
-#define IMGUI_DEFINE_MATH_OPERATORS
+#define INFO  Logger::eLogLevel::Info
+#define WARN  Logger::eLogLevel::Warn
+#define ERR   Logger::eLogLevel::Error
+#define DEBUG Logger::eLogLevel::Debug
 
-#include <imgui.h>
+#define LOG_INFO(fmt, ...) Logger::Log(INFO, fmt, ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...) Logger::Log(WARN, fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) Logger::Log(ERR, fmt, ##__VA_ARGS__)
+#define LOG_DEBUG(fmt, ...) Logger::Log(DEBUG, fmt, ##__VA_ARGS__)
+
 #include "core/gui/fonts/IconDef.hpp"
 #include "core/gui/imgui_helpers.hpp"

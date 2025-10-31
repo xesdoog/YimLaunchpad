@@ -1,8 +1,5 @@
 #pragma once
 
-#include <string>
-#include <vector>
-#include <mutex>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
@@ -22,6 +19,8 @@ namespace YLP
     public:
         ~Logger()
         {
+            Log(eLogLevel::Info, "============== Farewell ==============");
+
             if (m_File.is_open())
                 m_File.close();
         };
@@ -67,6 +66,11 @@ namespace YLP
             return GetInstance().m_Entries;
         }
 
+        static void Flush()
+        {
+            GetInstance().FlushImpl();
+        }
+
         static void Clear()
         {
             GetInstance().ClearImpl();
@@ -86,14 +90,51 @@ namespace YLP
     private:
         void InitImpl(const std::filesystem::path& file_path)
         {
+            if (m_Initialized)
+                return;
+
             std::lock_guard<std::mutex> lock(m_Mutex);
             if (m_File.is_open())
                 m_File.close();
 
             m_File.open(file_path, std::ios::out | std::ios::app);
-            if (m_File)
-                m_File << "========== Initializing YLP ==========\n"; // test string
+            if (!m_File.is_open())
+            {
+                std::fprintf(stderr, "Logger failed to open file: %s\n", file_path.string().c_str());
+                return;
+            }
 
+            std::set_terminate([]()
+            {
+                try
+                {
+                    if (auto pExc = std::current_exception())
+                        std::rethrow_exception(pExc);
+                    else
+                        Logger::Log(eLogLevel::Error, "Terminated due to unknown exception!");
+                }
+                catch (const std::exception& e)
+                {
+                    try {
+                        Logger::Log(eLogLevel::Error, "Unhandled exception: {}", e.what());
+                    }
+                    catch (...) {
+                        std::fprintf(stderr, "Unhandled exception (logger unavailable): %s\n", e.what());
+                    }
+                }
+                catch (...)
+                {
+                    try {
+                        Logger::Log(eLogLevel::Error, "Unhandled non-standard exception!");
+                    }
+                    catch (...) {
+                        std::fprintf(stderr, "Unhandled non-standard exception (logger unavailable)!\n");
+                    }
+                }
+                std::abort();
+            });
+
+            m_Initialized = true;
         }
 
         void LogImpl(eLogLevel level, const std::string& msg)
@@ -107,12 +148,17 @@ namespace YLP
 
                 if (m_File.is_open())
                 {
-                    m_File << "[" << timestamp << "] "
-                        << ToString(level) << ": "
-                        << msg << std::endl;
+                    m_File << std::format("[{}] {}: {}\n", timestamp, ToString(level), msg);
                     m_File.flush();
                 }
             }
+        }
+
+        void FlushImpl()
+        {
+            std::lock_guard<std::mutex> lock(m_Mutex);
+            if (m_File.is_open())
+                m_File.flush();
         }
 
         void ClearImpl()
@@ -135,6 +181,7 @@ namespace YLP
 
     private:
         mutable std::mutex m_Mutex;
+        std::atomic<bool> m_Initialized;
         std::vector<LogEntry> m_Entries;
         std::ofstream m_File;
 

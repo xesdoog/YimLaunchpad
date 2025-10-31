@@ -142,13 +142,13 @@ namespace YLP
         m_LastResizeTime = std::chrono::steady_clock::now();
     }
 
-    bool Renderer::IsFocusedImpl() const
+    std::atomic<bool> Renderer::IsFocusedImpl() const
     {
         WINDOWPLACEMENT wp{0};
         GetWindowPlacement(m_HWND, &wp);
 
-        bool minimized = (wp.showCmd == SW_SHOWMINIMIZED);
-        bool focused = (GetForegroundWindow() == m_HWND);
+        const bool minimized = (wp.showCmd == SW_SHOWMINIMIZED);
+        const bool focused = (GetForegroundWindow() == m_HWND);
 
         return focused && !minimized;
     }

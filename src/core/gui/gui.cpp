@@ -153,11 +153,6 @@ namespace YLP
 
             if (t.m_DirectionRight)
             {
-                cbChildWidth = ImLerp(prevWidth, regionWidth * phase, ImGui::GetIO().DeltaTime * 20);
-                prevWidth = cbChildWidth;
-            }
-            else
-            {
                 cbChildWidth = 0;
                 float dummyChildWidth = -ImLerp(prevWidth, regionWidth * phase, ImGui::GetIO().DeltaTime * 20);
                 prevWidth = dummyChildWidth;
@@ -165,6 +160,11 @@ namespace YLP
                 ImGui::BeginChild("##dummykid", ImVec2(dummyChildWidth * 1.2, cbChildHeight));
                 ImGui::EndChild();
                 ImGui::SameLine();
+            }
+            else
+            {
+                cbChildWidth = ImLerp(prevWidth, regionWidth * phase, ImGui::GetIO().DeltaTime * 20);
+                prevWidth = cbChildWidth;
             }
 
             if (t.m_Progress >= 1.0f)
