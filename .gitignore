@@ -1,8 +1,17 @@
 **/__pycache__
 **/.venv
+**/cmake/
+**/out
+**/build
+**/src
 *.pyc
 *.pyi
 *.log
 *.code-workspace
 *.ini
 *.json
+*.cpp
+*.hpp
+*.h
+*.cmake
+CMakeLists.txt
