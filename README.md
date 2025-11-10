@@ -66,7 +66,7 @@ Apologies to the friends I annoyed with stupid questions.
 
 YLP's UI has been fully revamped while still keeping its original identity.
 
-![example](https://github.com/xesdoog/YLP/blob/ylp_cpp/Screenshots/1.jpg)
+![example](https://github.com/xesdoog/YLP/blob/main/Screenshots/1.jpg)
 
 You can find out more in the [Screenshots](/Screenshots) folder.
 
