@@ -19,6 +19,7 @@ more refined workflow.
 - A standalone injector + custom DLLs.
 - An improved Lua manager.
 - All features from **YLP Python** refined and ported to **C++**.
+- Significantly smaller binary size: from **84MB** down to only **1.7MB**.
 
 ------------------------------------------------------------------------
 
