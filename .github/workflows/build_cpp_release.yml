@@ -1,0 +1,172 @@
+name: YLP CPP Release
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "**.cpp"
+      - "**.hpp"
+      - "**.h"
+      - "**.rc"
+      - "CMakeLists.txt"
+  workflow_dispatch:
+
+
+jobs:
+
+  build:
+    runs-on: windows-latest
+    name: Build YLP CPP
+    env:
+      BUILD_TYPE: Release
+    outputs:
+      full_sha: ${{ steps.var.outputs.full_sha }}
+      new_tag: ${{ steps.get_version.outputs.new_tag }}
+      ffi_tag: ${{ steps.get_version.outputs.ffi_tag }}
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Get Version Number
+        id: get_version
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tags = await github.rest.repos.listTags({ owner: owner, repo: repo });
+            
+            let newTag;
+            let oldTag;
+            let ffiTag;
+            let latestTag = tags.data.length ? tags.data[0].name : "2.0.0.0";
+            
+            const versionParts = latestTag.split('.').map(Number);
+            if (versionParts[0] < 2)
+            {
+                versionParts[0] = 2;
+                versionParts[1] = 0;
+                versionParts[2] = 0;
+                versionParts[3] = 0;
+            }
+            else if (versionParts[1] === 9 && versionParts[2] === 9 && versionParts[3] === 9) 
+            {
+                versionParts[0] += 1;
+                versionParts[1] = 0;
+                versionParts[2] = 0;
+                versionParts[3] = 0;
+            } 
+            else if (versionParts[2] === 9)
+            {
+                versionParts[1] += 1;
+                versionParts[2] = 0;
+                versionParts[3] = 0;
+            } 
+            else if (versionParts[3] === 9)
+            {
+                versionParts[2] += 1;
+                versionParts[3] = 0;
+            } 
+            else
+            {
+                versionParts[3] += 1;
+            }
+
+            newTag = `${versionParts.join('.')}`;
+            oldTag = latestTag;
+            ffiTag = newTag.replaceAll(".",",");
+            core.setOutput("new_tag", newTag); 
+            core.setOutput("ffi_tag", ffiTag); 
+            core.setOutput("old_tag", oldTag);
+
+      - name: Update Version Resource
+        shell: pwsh
+        run: |
+          $version = ${{ steps.get_version.outputs.new_tag }}
+          $commit  = git rev-parse --short HEAD
+          $file = "src/resources/version.rc"
+          $content = Get-Content $file -Raw
+          $content = $content -replace 'FileVersion", *"[^"]*"', ('FileVersion", "{0}"' -f $version)
+          $content = $content -replace 'ProductVersion", *"[^"]*"', ('ProductVersion", "{0}"' -f $version)
+          $content = $content -replace 'CommitHash", *"[^"]*"', ('CommitHash", "{0}"' -f $commit)
+          Set-Content -Path $file -Value $content
+    
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
+      - name: Generate CMake project
+        run: cmake -D CMAKE_BUILD_TYPE=Release -D OPTIMIZE=YES -S. -Bbuild -G Ninja
+
+      - name: Build x64 Executable
+        run: cmake --build ./build --config Release --target YLP --
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary
+          path: build/YLP.exe
+          if-no-files-found: warn
+
+      - name: Generate Build Info
+        id: var
+        run: |
+          echo "full_sha=$(git rev-parse HEAD)" >> $env:GITHUB_OUTPUT
+          echo "short_sha=$(git rev-parse --short HEAD)" >> $env:GITHUB_OUTPUT
+
+  create_release:
+    runs-on: ubuntu-latest
+    name: Create Release
+    needs: build
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Write Changelog
+        id: write_changelog
+        run: |
+            commitMessage=$(git log -1 --pretty=format:"%s")
+            commitBody=$(git log -1 --pretty=format:"%b")
+            echo "Commit Message: $commitMessage"
+            echo "Commit Body: $commitBody"
+            {
+              echo "changelog_body<<EOF"
+              echo "$commitMessage"
+              echo ""
+              echo "$commitBody"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
+        shell: bash
+
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: binary
+        
+      - name: Echo build_sha256
+        id: build_sha
+        run: |
+          sha256sum YLP.exe > sha256.checksum
+          echo "build_sha=$(cat sha256.checksum)" >> $GITHUB_OUTPUT
+          cat sha256.checksum
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: YLP v${{ needs.build.outputs.new_tag }}
+          tag_name: ${{ needs.build.outputs.new_tag }}
+          body: |
+              >[!NOTE]
+              >**This automatic release was built by Github Actions**
+              >| [Link to build](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+              >| ------------- |
+
+              ### Build SHA256:
+                    ${{ steps.build_sha.outputs.build_sha }}
+              
+              ### v${{ needs.build.outputs.new_tag }} Changelog
+              ${{ env.changelog_body }}
+          files: |
+            YLP.exe

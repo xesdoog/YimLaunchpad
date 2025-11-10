@@ -1,104 +1,76 @@
-# YimLaunchpad
-A launchpad for YimMenu.
+# YLP (formerly YimLaunchpad)
 
-![ylp_splash](https://github.com/user-attachments/assets/0acf2233-078a-4cce-a0a7-d7b84d91682b)
+**Version 2.0** marks a complete rewrite of the platform from Python to C++, built for performance, stability, and a seamless user experience.
 
-###  
+This new version focuses primarily on performance but also brings a more user-friendly UI, built-in updater, and an overall
+more refined workflow.
 
+------------------------------------------------------------------------
 
-> [!WARNING]
-> This program was written for educational purposes only. Use at your own risk.
+## 🚀 What's New
 
-###  
+- Fully native **C++ implementation**.
+- Integrated **auto-update system**.
+- Lightweight **ImGui-based interface**.
+- Improved **logging**, **error handling**, and **performance**.
+- Simplified **project structure** and **mod management**.
+- A full-fledged **process monitor** for both **GTA V** and **GTA V Enhanced** *(with the ability to choose which one to monitor)*.
+- Optional support for **YimMenu V2**.
+- A standalone injector + custom DLLs.
+- An improved Lua manager.
+- All features from **YLP Python** refined and ported to **C++**.
 
-## Features
+------------------------------------------------------------------------
 
-### YimMemu & Other DLLs
-
-- Download YimMenu.
-- Keep it updated: Automatically checks for updates on launch and sends toast notifications. *(you can also manually check for updates at any time)*.
-- Enable/Disable YimMenu's debug console.
-- Start the game.
-- Inject YimMenu into the game's process.
-- Auto-Inject YimMenu without having to worry about the perfect injection delay: YimLaunchpad will only auto-inject when the game is in the landing page.
-- Add custom DLLs.
-- Inject custom DLLs into the game's process.
-- Auto-Exit after injecting any DLL.
-- Scans modules loaded by the game to determine if YimMenu and FSL are loaded.
-
-### Lua Scripts
-
-- Download Lua scripts from [YimMenu-Lua](https://github.com/YimMenu-Lua).
-- Enable/Disable scripts.
-- Delete scripts.
-- Enable/Disable auto-reloading of Lua scripts.
-- Keep your Lua scripts updated: Automatically checks for script updates when fetching repositories and sends toast notifications. *(You can also manually check individual repositories that you have installed)*.
-
-> [!IMPORTANT]
-> To benefit from the Lua Scripts features, you have to download the scripts using the launcher. The reason for that is simply because YimLaunchpad organizes your scripts into folders named after the script's GitHub repository. This allows it to track your enabled/disabled scripts, check the last time a script was updated and compare it to the repository, etc...
+>[Important]
+> For returning users, the legacy **Python version of YLP** is **no longer supported**.
+> Automatic updates from that version will not work anymore.
+> However, you can still access its full source code under the [legacy branch](https://github.com/xesdoog/ylp/tree/legacy_ylp_python).
 >
-> Loose files and folders named anything other than the script's repository name will not be recognized as installed scripts.
+> If you were using the old YLP, please download the new version manually from the latest release page.
 
-> [!IMPORTANT]
-> If you're not authenticated, avoid spamming the Lua Scripts tab *(refreshing multiple times, repeatedly closing and relaunching the app, etc...)*. The GitHub API has a rate limit of 60 request per hour for unauthenticated requests and will put you on a timeout if you exceed that limit. More info on API rate limits can be found [here](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api?apiVersion=2022-11-28).
->
-> If you want to increase the limit to 5000 requests per hour, you have the option to login to GitHub through YimLaunchpad using a device code. No email or password is required.
+------------------------------------------------------------------------
 
-### Settings
+## 🧭 Getting Started
 
-- Update the launchpad.
-- Open the launchpad's folder. *(located under `%AppData%\YimLaunchpad`)*.
-- Add `YimLaunchpad.exe` and its parent folder to Windows Defender exclusions using Windows Powershell™.
-- Enable/Disable `Auto-Exit`.
-- Enable/Disable `Auto-Inject`.
-- Enable/Disable YimLaunchpad's `Debug Console`.
-- Login/logout to/from GitHub.
+1. Download the latest version from the [Releases](https://github.com/xesdoog/ylp/releases) page.
+2. Move it to your preferred location.
+3. Run **YLP.exe**. No installation required.
+4. The built-in updater will keep you up to date.
 
-## TODO
+>[Note]
+> Windows will flag the executable on first launch. You'll have to whitelist it in your anti-virus.
+> I neither have the money nor the reputation for Microsoft to trust my code. You'll have to read the source and decide for yourself.
 
-- [ ] Add themes. *meh*
-- [x] Add automatic injection. ✅
-- [x] Add a button to refresh installed Lua scripts individually. ✅
+------------------------------------------------------------------------
 
-## Showcase
+## 💬 Feedback & Issues
 
-### Dashboard
+Please report any bugs or feature suggestions on the [Issues](https://github.com/xesdoog/ylp/issues/new/choose) page.
+Your feedback helps shape the next iterations of YLP.
 
-![ylpv2](https://github.com/user-attachments/assets/667e43ad-63c7-412c-96d2-90180073a5ef)
+------------------------------------------------------------------------
 
-### Lua Scripts
+### ❤️ Thank You
 
-![ylpv2_1](https://github.com/user-attachments/assets/1c6253cd-7232-4108-903a-b0d0ba2ff10a)
+To everyone who supported YLP's early Python prototype, thank you! This C++ rewrite exists because of your feedback, patience, and enthusiasm.
 
-### Settings
+A huge thanks to the open source community and their immense contributions. You can find out more in the [Third Party](/Thirdparty/Readme.md) section.
 
-![ylpv2_2](https://github.com/user-attachments/assets/b57aa53f-ab82-4a25-9b00-769abc09d9e6)
+Apologies to the friends I annoyed with stupid questions.
 
-## Licenses
+------------------------------------------------------------------------
 
-- This program uses Google's Rokkit Regular font, licensed under [SIL Open Font License V1.1](https://openfontlicense.org/open-font-license-official-text/)
-- This program uses the free version of FontAwesome v4.7 also licensed under [SIL Open Font License V1.1](https://openfontlicense.org/open-font-license-official-text/)
+## 🖼️ UI Showcase
 
-## Donations
+YLP's UI has been fully revamped while still keeping its original identity.
 
-- I don't want your money. If you like the project, give it a star ⭐
+![example](https://github.com/xesdoog/YLP/blob/ylp_cpp/Screenshots/1.jpg)
 
-## Build It Yourself
+You can find out more in the [Screenshots](/Screenshots) folder.
 
-If you don't want to use the release executable built by GitHub Actions, you can build YimLaunchpad yourself if you have `Python >= 3.12.x` installed. It takes less than 2 minutes:
-- Fork the repo.
-- Open a terminal and cd to the repo's directory.
-- Install Pyinstaller:
+------------------------------------------------------------------------
 
-      pip install pyinstaller
-
-- Install Requirements:
-
-      pip install -r requirements.txt 
-
-- Download [UPX](https://github.com/upx/upx/releases) and note down where you saved it.
-- Once ready, run this command to build a portable executable:
-
-      pyinstaller "./src/YimLaunchpad.py" --noconfirm --onefile --windowed --name "YimLaunchpad" --clean --icon "./src/assets/img/ylp_icon.ico" --splash "./src/assets/img/ylp_splash.png" --add-data "./src;src/" --add-binary "./src/assets/dll/glfw3.dll;." --add-binary "./src/assets/dll/msvcr110.dll;." --upx-dir "PATH_TO_WHERE_YOU_SAVED_UPX" --upx-exclude "vcruntime140.dll"
-
-- Once the process completes, there will be a new folder in the project's root directory named `dist`. The executable can be found there.
+>[!Important]
+>YLP is provided **as is**, without any warranty of any kind, express or implied.
+>The author shall not be held liable for any damages, data loss, or issues arising from the use or misuse of this software.
