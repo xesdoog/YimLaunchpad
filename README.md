@@ -22,7 +22,7 @@ more refined workflow.
 
 ------------------------------------------------------------------------
 
->[Important]
+>[!Important]
 > For returning users, the legacy **Python version of YLP** is **no longer supported**.
 > Automatic updates from that version will not work anymore.
 > However, you can still access its full source code under the [legacy branch](https://github.com/xesdoog/ylp/tree/legacy_ylp_python).
@@ -38,7 +38,7 @@ more refined workflow.
 3. Run **YLP.exe**. No installation required.
 4. The built-in updater will keep you up to date.
 
->[Note]
+>[!Note]
 > Windows will flag the executable on first launch. You'll have to whitelist it in your anti-virus.
 > I neither have the money nor the reputation for Microsoft to trust my code. You'll have to read the source and decide for yourself.
 
