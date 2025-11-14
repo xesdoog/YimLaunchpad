@@ -61,7 +61,7 @@ namespace YLP
 			std::vector<DllInfo> savedDlls{};
 		};
 
-		static void Init(std::filesystem::path path)
+		static void Init(const std::filesystem::path& path)
 		{
 			GetInstance().InitImpl(path);
 		}
@@ -102,10 +102,10 @@ namespace YLP
 	private:
 		std::filesystem::path m_FilePath;
 
-		void InitImpl(std::filesystem::path path)
+		void InitImpl(const std::filesystem::path& path)
 		{
 			m_FilePath = path;
-			if (!std::filesystem::exists(path))
+			if (!IO::Exists(path))
 				Save();
 			Load();
 		}
@@ -132,23 +132,24 @@ namespace YLP
 				    {"checksum", dll.checksum},
 				});
 
-			std::ofstream out(m_FilePath);
-			out << std::setw(4) << j;
+			std::ofstream f(m_FilePath);
+			f << std::setw(4) << j;
+			f.close();
 		}
 
 		void LoadImpl()
 		{
-			if (!std::filesystem::exists(m_FilePath))
+			if (!IO::Exists(m_FilePath))
 				return;
 
-			std::ifstream in(m_FilePath);
-			if (!in.is_open())
+			std::ifstream f(m_FilePath);
+			if (!f.is_open())
 				return;
 
 			nlohmann::json j;
 			try
 			{
-				in >> j;
+				f >> j;
 			}
 			catch (const std::exception&)
 			{
@@ -156,6 +157,8 @@ namespace YLP
 				ResetImpl();
 				return;
 			}
+
+			f.close();
 
 			m_Config.autoMonitorFlags = j.value("auto_monitor_flags", MonitorNone);
 			m_Config.mainWindowIndex = j.value("main_window_index", 0);
@@ -173,11 +176,13 @@ namespace YLP
 			{
 				for (auto& entry : j["saved_dlls"])
 				{
-					DllInfo info{};
-					info.name = entry.value("name", "");
-					info.filepath = entry.value("path", "");
-					info.checksum = entry.value("checksum", "");
-					m_Config.savedDlls.push_back(std::move(info));
+					DllInfo dll{};
+
+					dll.name = entry.value("name", "");
+					dll.filepath = entry.value("path", "");
+					dll.checksum = entry.value("checksum", "");
+
+					m_Config.savedDlls.push_back(std::move(dll));
 				}
 			}
 		}

@@ -1,5 +1,8 @@
 #include <common.hpp>
+#include <core/updater.hpp>
 #include <core/gui/renderer.hpp>
+#include <core/gui/msgbox.hpp>
+#include <core/gui/notifier.hpp>
 #include <core/github/gitmgr.hpp>
 #include <core/YimMenu/yimmenu.hpp>
 #include <core/memory/pointers.hpp>
@@ -16,7 +19,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 		if (hExHWND)
 			SetForegroundWindow(hExHWND);
 
-		MsgBox::Error(L"Warning", L"YLP is already running!");
+		MsgBox::Error(L"Error", L"YLP is already running!");
 		return 1;
 	}
 
@@ -53,9 +56,14 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 	YimMenuHandler::Init();
 
 	g_Pointers.Init();
-	g_Running = true;
 
-	MSG msg = {};
+	ThreadManager::RunDelayed([] {
+		YLPUpdater.Check();
+	}, 7s);
+
+	g_Running = true;
+	
+	MSG msg = {};	
 	while (msg.message != WM_QUIT)
 	{
 		if (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE))

@@ -41,6 +41,7 @@ namespace YLP::Frontend
 		    {"Name", SortMode::NAME},
 		    {"Stars", SortMode::STARS},
 		    {"Date", SortMode::COMMIT},
+		    {"Installed", SortMode::INSTALLED},
 		};
 
 		static const char* GetSortModeName(const SortMode mode)
@@ -50,6 +51,7 @@ namespace YLP::Frontend
 			case SortMode::NAME: return "Name";
 			case SortMode::STARS: return "Stars";
 			case SortMode::COMMIT: return "Date";
+			case SortMode::INSTALLED: return "Installed";
 			default: return "Stars";
 			}
 		}
@@ -66,7 +68,8 @@ namespace YLP::Frontend
 
 			const bool tileHovered = ImGui::IsMouseHoveringRect(ImGui::GetCursorScreenPos(),
 			                             ImVec2(ImGui::GetCursorScreenPos().x + titleSize.x + 5.f,
-			                                 ImGui::GetCursorScreenPos().y + titleSize.y + 5.f)) && !m_SortPopupOpen;
+			                                 ImGui::GetCursorScreenPos().y + titleSize.y + 5.f))
+			    && !m_SortPopupOpen;
 
 			const bool titleClicked = tileHovered && ImGui::IsMouseClicked(0);
 			const ImVec4 titleCol = tileHovered ? ImVec4(0.3f, 0.5f, 0.8f, 1.0f) : textCol;
@@ -181,7 +184,7 @@ namespace YLP::Frontend
 
 			ImGui::SameLine(0.f, 10.f);
 
-			if (ImGui::Button(std::format("{} Refresh", ICON_REFRESH).c_str(), m_CtrlBtnSize))
+			if (ImGui::Button(ICON_REFRESH " Refresh", m_CtrlBtnSize))
 			{
 				ThreadManager::Run([] {
 					GitHubManager::FetchRepositories();
@@ -189,18 +192,18 @@ namespace YLP::Frontend
 			}
 
 			ImGui::SameLine(ImGui::GetContentRegionAvail().x - 20);
-			ImGui::TextColored(ImVec4(1.0f, 0.7568, 0.027f, 1.0f), ICON_ALERT);
+			ImGui::TextColored(ImVec4(1.0f, 0.7568, 0.027f, 1.0f), ICON_WARNING);
 			ImGui::ToolTip("IMPORTANT: These repositories are for YimMenu V1 only (Legacy).", nullptr, false);
 
+			ImGui::SetNextWindowScroll(ImVec2(m_CtrlBtnSize.x, 0));
 			if (ImGui::BeginPopup("sortscripts"))
 			{
 				m_SortPopupOpen = true;
-				ImGui::SetWindowPos(ImVec2(sortButtonPos.x + m_CtrlBtnSize.x, sortButtonPos.y + (ImGui::GetWindowHeight() / 2)));
+				ImGui::SetWindowPos(ImVec2(sortButtonPos.x + ImGui::GetStyle().ItemSpacing.x, sortButtonPos.y + (m_CtrlBtnSize.y * 2)));
 
 				for (const auto& opt : SortOptions)
 				{
-					bool selected = (opt.mode == sortmode);
-					if (ImGui::MenuItem(opt.label, nullptr, selected))
+					if (ImGui::MenuItem(opt.label, nullptr, (opt.mode == sortmode)))
 					{
 						GitHubManager::SetSortMode(opt.mode);
 						ImGui::CloseCurrentPopup();

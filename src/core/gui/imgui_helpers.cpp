@@ -100,7 +100,7 @@ namespace ImGui
 	{
 		ImGui::PushFont(Fonts::Title);
 		ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35);
-		ImGui::TextColored(ImVec4(1.0f, 0.7568, 0.027f, 1.0f), ICON_ALERT);
+		ImGui::TextColored(ImVec4(1.0f, 0.7568, 0.027f, 1.0f), ICON_WARNING);
 		ImGui::SameLine();
 		ImGui::Text("Warning");
 		ImGui::PopFont();
@@ -141,7 +141,7 @@ namespace ImGui
 		case ImCalloutType::Warning:
 			accentColor = ImVec4(1.0f, 0.7568, 0.027f, 1.0f);
 			label = "Warning";
-			icon = ICON_ALERT;
+			icon = ICON_WARNING;
 			break;
 		case ImCalloutType::Important:
 			accentColor = ImVec4(0.498f, 0.1f, 1.0f, 1.0f);

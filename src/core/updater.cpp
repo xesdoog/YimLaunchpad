@@ -17,15 +17,25 @@
 
 #include "updater.hpp"
 
-#pragma comment(lib, "Version.lib")
+#include <core/gui/gui.hpp>
+#include <core/gui/msgbox.hpp>
+#include <core/gui/notifier.hpp>
 
 
 namespace YLP
 {
+	void Updater::Reset()
+	{
+		m_DownloadProgress = 0.f;
+		m_State = Idle;
+		IO::RemoveAll(m_BackupPath);
+	}
+
 	Updater::Version Updater::GetLocalVersion()
 	{
 		if (!m_LocalVersion)
 		{
+			// https://learn.microsoft.com/en-us/windows/win32/api/winver/nf-winver-getfileversioninfow
 			wchar_t path[MAX_PATH];
 			GetModuleFileNameW(nullptr, path, MAX_PATH);
 
@@ -35,8 +45,12 @@ namespace YLP
 				return {};
 
 			std::vector<BYTE> data(size);
-			if (!GetFileVersionInfoW(path, handle, size, data.data()))
+			if (!GetFileVersionInfoW(path, 0, size, data.data()))
+			{
+				DWORD err = GetLastError();
+				LOG_ERROR("Failed to get file version information! {}\t{}", err, PsUtils::TranslateError(err));
 				return {};
+			}
 
 			VS_FIXEDFILEINFO* ffi = nullptr;
 			UINT len = 0;
@@ -56,22 +70,21 @@ namespace YLP
 	Updater::Version Updater::GetRemoteVersion()
 	{
 		std::string latest_tag = Utils::RegexMatchHtml(
-		    L"github.com",
-		    L"/xesdoog/YLP/releases/latest",
+		    m_ReleaseUrl.first,
+		    m_ReleaseUrl.second,
 		    R"(app-argument=https://github\.com/xesdoog/YLP/releases/tag/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+))",
 		    1);
 
 		if (latest_tag.empty())
 		{
-
 #ifdef DEBUG
-			LOG_DEBUG("HTML scrape failed! Falling back to REST API");
+			LOG_DEBUG("[YLP]: HTML scrape failed! Falling back to REST API");
 #endif // DEBUG
 
-			auto response = Utils::HttpRequest(L"api.github.com", L"/repos/xesdoog/YLP/releases/latest");
+			auto response = Utils::HttpRequest(L"api.github.com", L"/repos" + m_ReleaseUrl.second);
 			if (!response.success)
 			{
-				LOG_ERROR("Failed to get remote version! Please try again later.");
+				LOG_ERROR("[YLP]: Failed to get remote version! Please try again later.");
 				m_State = Idle;
 				return {};
 			}
@@ -87,20 +100,29 @@ namespace YLP
 	void Updater::Check()
 	{
 		ThreadManager::Run([this] {
+			LOG_INFO("[YLP]: Checking for updates...");
 			m_State = Checking;
 			Version current = GetLocalVersion();
 			Version remote = GetRemoteVersion();
 
 			if (current == Version{})
 			{
-				LOG_WARN("Local version info missing or corrupted! Skipping update check.");
+				LOG_WARN("[YLP]: Local version info missing or corrupted! Skipping update check.");
+				Notifier::Add("YLP", "Local version info missing or corrupted! Skipping update check.", Notifier::Warning);
 				m_State = Idle;
 				return;
 			}
 
 			if (remote > current)
 			{
-				LOG_INFO("Update available!");
+				LOG_INFO("[YLP]: Update available!");
+				Notifier::Add("YLP",
+				    std::format("Version {} is available! Download it from the settings tab.", remote.ToString()),
+				    Notifier::Info,
+				    [] {
+					    GUI::SetActiveTab(ICON_SETTINGS);
+					    Notifier::Close();
+				    });
 				m_State = Pending;
 				return;
 			}
@@ -112,7 +134,7 @@ namespace YLP
 			}
 #endif // !DEBUG
 
-			LOG_INFO("No new releases found. YLP is up to date.");
+			LOG_INFO("[YLP]: No new releases found.");
 			m_State = Idle;
 		});
 	}
@@ -122,42 +144,38 @@ namespace YLP
 		ThreadManager::Run([this] {
 			if (m_State != Pending)
 			{
-				LOG_ERROR("There are no pending updates to download!");
+				LOG_ERROR("[YLP]: There are no pending updates to download!");
 				return;
 			}
 
 			m_State = Downloading;
-			std::wstring urlHost = L"github.com";
-			std::wstring urlPath = L"/xesdoog/YLP/releases/latest/download/YLP.exe";
-			std::filesystem::path backupPath = g_ProjectPath / "update_cache";
-			std::filesystem::path exePath = g_ProjectPath / "update_cache" / "YLP.exe";
+			IO::CreateFolders(m_BackupPath);
+			auto response = Utils::HttpRequest(m_ReleaseUrl.first,
+			    m_ReleaseUrl.second + L"/download/YLP.exe",
+			    {},
+			    &m_DownloadPath,
+			    &m_DownloadProgress); // TODO: wrap this in a util function
 
-			IO::CreateFolders(backupPath);
-			auto response = Utils::HttpRequest(urlHost, urlPath, {}, &exePath, &m_DownloadProgress); // TODO: wrap this in a util function
 			if (!response.success)
 			{
-				LOG_ERROR("Failed to download update!\tHTTP status: {}", response.status);
-				m_DownloadProgress = 0.f;
-				m_State = Idle;
-				IO::RemoveAll(backupPath);
+				LOG_ERROR("[YLP]: Failed to download update!\tHTTP status: {}", response.status);
+				Reset();
 				return;
 			}
 
 			m_State = Ready;
 			if (!MsgBox::Confirm(L"Confirm Update", L"Press OK to restart YLP in order to apply the update."))
 			{
-				IO::RemoveAll(backupPath);
-				LOG_INFO("Update canceled by user.");
-				m_DownloadProgress = 0.f;
-				m_State = Idle;
+				LOG_INFO("[YLP]: Update canceled by user.");
+				Reset();
 				return;
 			}
 
-			Start();
+			Update();
 		});
 	}
 
-	void Updater::Start()
+	void Updater::Update()
 	{
 		const std::filesystem::path psPath = g_ProjectPath / "YLPUpdater.ps1";
 		char exeBuffer[MAX_PATH];
@@ -192,23 +210,24 @@ exit 0
 		out.close();
 
 		std::string args = "-ExecutionPolicy Bypass -File \""
-			+ psPath.string()
-			+ "\" -ExePath \""
-			+ odlExePath.string()
-			+ "\" -NoProfile -WindowStyle Hidden";
+		    + psPath.string()
+		    + "\" -ExePath \""
+		    + odlExePath.string()
+		    + "\" -NoProfile -WindowStyle Hidden";
 
 		SHELLEXECUTEINFOA info{};
+
 		info.cbSize = sizeof(info);
 		info.fMask = SEE_MASK_NOCLOSEPROCESS;
 		info.lpVerb = "open";
 		info.lpFile = "powershell.exe";
-		info.lpParameters = args.c_str();
 		info.nShow = SW_HIDE;
+		info.lpParameters = args.c_str();
 
 		if (!ShellExecuteExA(&info))
 		{
 			DWORD err = GetLastError();
-			LOG_ERROR("Failed to start updater! Please try again later.\nError code: {}\nError message: {}",
+			LOG_ERROR("[YLP]: Failed to start updater! Please try again later.\nError code: {}\nError message: {}",
 			    err,
 			    PsUtils::TranslateError(err));
 

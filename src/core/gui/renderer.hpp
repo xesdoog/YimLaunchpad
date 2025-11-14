@@ -75,7 +75,7 @@ namespace YLP
 			return GetInstance().m_HWND;
 		}
 
-		static ImVec2 GetWindowSize()
+		static ImVec2 GetWindowSize() noexcept
 		{
 			return GetInstance().GetWindowSizeImpl();
 		}
@@ -122,7 +122,7 @@ namespace YLP
 
 		std::atomic<bool> IsFocusedImpl() const;
 
-		ImVec2 GetWindowSizeImpl();
+		ImVec2 GetWindowSizeImpl() noexcept;
 		ImTextureID LoadTextureFromFileImpl(const std::filesystem::path& filepath);
 		ImTextureID LoadTextureFromMemoryImpl(const unsigned char* data, size_t size, const std::string& name);
 		ImTextureID LoadRawTextureImpl(const unsigned char* rgbaData, int w, int h, const std::string& name);

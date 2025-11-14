@@ -18,6 +18,7 @@
 #pragma once
 
 #include <core/gui/fonts/fonts.hpp>
+#include <core/gui/msgbox.hpp>
 
 
 namespace YLP::Frontend
@@ -28,7 +29,7 @@ namespace YLP::Frontend
 	{
 	public:
 		InjectorUI() = default;
-		~InjectorUI() {};
+		~InjectorUI() noexcept = default;
 
 		static void Draw()
 		{
@@ -176,7 +177,7 @@ namespace YLP::Frontend
 			ImGui::SetCursorPosX(buttonCenterX);
 			ImGui::PushFont(Fonts::Title);
 			ImGui::BeginDisabled(!selectedProcess.m_Pid || selectedDLL.filepath.empty());
-			if (ImGui::Button(std::format("{} Inject", ICON_INJECT).c_str(), ImVec2(150, 37)))
+			if (ImGui::Button(ICON_INJECT " Inject", ImVec2(150, 37)))
 				ThreadManager::RunDetached([] {
 					try
 					{
@@ -187,7 +188,7 @@ namespace YLP::Frontend
 							MsgBox::Error("Error", result.message.c_str());
 						}
 					}
-					catch (std::exception& e)
+					catch (const std::exception& e)
 					{
 						LOG_ERROR("Failed to inject DLL! {}", e.what());
 					}

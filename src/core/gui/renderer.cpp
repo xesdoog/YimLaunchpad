@@ -293,7 +293,7 @@ namespace YLP
 		SwapBuffers(m_HDC);
 	}
 
-	ImVec2 Renderer::GetWindowSizeImpl()
+	ImVec2 Renderer::GetWindowSizeImpl() noexcept
 	{
 		return ImVec2((float)m_Width, (float)m_Height);
 	}

@@ -207,9 +207,9 @@ namespace YLP
 			return false;
 		}
 
-		LOG_INFO("ProcMon: Module {} loaded successfully. Checking process stability after injection...", dllName);	
+		LOG_INFO("ProcMon: Module {} loaded successfully. Checking process stability after injection...", dllName);
 		auto result = PsUtils::WaitForProcessExit(m_Scanner->GetProcessHandle(), 10000);
-		
+
 		if (result.has_value())
 		{
 			DWORD exitCode = result.value();
@@ -242,13 +242,14 @@ namespace YLP
 
 		if (IsBattlEyeRunning())
 		{
-			LOG_WARN("ProcMon: Standing down until the all-seeing Bastian looks away. (BattlEye detected!)");
+			LOG_WARN("[ProcMon]: Standing down until the all-seeing Bastian looks away. (BattlEye detected!)");
+			Notifier::Add("ProcMon", "Standing down until the all-seeing Bastian looks away. (BattlEye detected!)", Notifier::Warning);
 			m_HeBeWatchin.store(true);
 			m_LastBEcheckTime = std::chrono::system_clock::now();
 			return;
 		}
 
-		LOG_INFO("ProcMon: Started monitoring '{}'", m_ProcessName);
+		LOG_INFO("[ProcMon]: Started monitoring {}", m_ProcessName);
 
 		try
 		{
@@ -308,7 +309,7 @@ namespace YLP
 			m_Running = false;
 			m_Scanner.reset();
 		}
-		catch (std::exception& e)
+		catch (const std::exception& e)
 		{
 			LOG_ERROR("ProcMon: Caught unhandled exception: {}", e.what());
 		}

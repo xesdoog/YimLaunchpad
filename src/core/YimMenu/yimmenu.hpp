@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <core/gui/notifier.hpp>
+
 
 namespace YLP
 {
@@ -24,12 +26,6 @@ namespace YLP
 	{
 		YimMenuV1 = 1,
 		YimMenuV2
-	};
-
-	enum eMenuState : uint8_t
-	{
-		Idle,
-		Busy,
 	};
 
 	class YimMenu final
@@ -47,12 +43,51 @@ namespace YLP
 			return m_Exists;
 		}
 
+		enum eMenuViewState : uint8_t
+		{
+			Idle,
+			Error,
+			Checking,
+			Downloading,
+			PendingUpdate,
+		};
+
+		eMenuViewState GetState() const
+		{
+			return m_State;
+		}
+
+		void ResetState()
+		{
+			m_State = Idle;
+		}
+
+		void Notify(const std::string& msg, Notifier::eNotificationLevel level = Notifier::Info, bool log = false)
+		{
+			std::string title = std::format("[{}]", m_Name);
+			Notifier::Add(title, msg, level);
+			
+			if (log)
+				Logger::Log(static_cast<Logger::eLogLevel>(level), msg);
+		}
+
+		bool SanityCheck()
+		{
+			if (m_Exists && !IO::Exists(m_DllPath))
+			{
+				m_State = Error;
+				m_Exists = false;
+				Notify("The DLL file was removed! Please check your anti-virus settings.", Notifier::Error, true);
+				return false;
+			}
+			return m_Exists;
+		}
+
 		void Init(eYimVersion version,
 		    const std::filesystem::path& path,
 		    const std::string& url,
 		    const std::pair<std::wstring, std::wstring>& releaseUrl,
 		    const std::pair<std::wstring, std::wstring>& downloadUrl)
-
 		{
 			m_Version = version;
 			m_BasePath = path;
@@ -83,11 +118,15 @@ namespace YLP
 			}
 
 			std::getline(f, m_Checksum);
+			f.close();
 			return true;
 		}
 
 		void UpdateChecksum()
 		{
+			if (!SanityCheck())
+				return;
+
 			m_Checksum = Utils::CalcSha256(m_DllPath);
 			std::ofstream f(m_ChecksumPath);
 			if (f.is_open())
@@ -108,7 +147,7 @@ namespace YLP
 
 		void Download()
 		{
-			std::scoped_lock<std::mutex> lock(m_Mutex);
+			std::scoped_lock lock(m_Mutex);
 
 			if (!IO::Exists(g_ProjectPath))
 				return;
@@ -119,23 +158,22 @@ namespace YLP
 			try
 			{
 				LOG_INFO("{}: Downloading latest Nightly release...", m_Name);
-				m_IsDownloading = true;
+				m_State = Downloading;
 				auto response = Utils::HttpRequest(m_DownloadUrl.first, m_DownloadUrl.second, {}, &m_DllPath, &m_DownloadProgress);
 				if (!response.success)
 				{
 					LOG_ERROR("{}: Failed to download DLL!\n\tHTTP status: {}", m_Name, response.status);
-					m_IsDownloading = false;
+					ResetState();
 					return;
 				}
 
 				UpdateChecksum();
 				GetCommitHash();
-				m_IsDownloading = false;
-				m_PendingUpdate = false;
+				ResetState();
 				m_Exists = IO::Exists(m_DllPath);
 				LOG_INFO("{}: Done.", m_Name);
 			}
-			catch (std::exception& e)
+			catch (const std::exception& e)
 			{
 				LOG_ERROR("An exception has occured: {}", e.what());
 			}
@@ -143,14 +181,15 @@ namespace YLP
 
 		void CheckForUpdates()
 		{
-			std::scoped_lock<std::mutex> lock(m_Mutex);
-			m_State = Busy;
+			std::scoped_lock lock(m_Mutex);
+			m_State = Checking;
+
+			if (!SanityCheck())
+				return;
+
 			try
 			{
-				if (!m_Exists)
-					return;
-
-				LOG_INFO("{}: Checking for updates...", m_Name);
+				LOG_INFO("[{}]: Checking for updates...", m_Name);
 				auto remote_sha = Utils::RegexMatchHtml(
 				    m_ReleaseUrl.first,
 				    m_ReleaseUrl.second,
@@ -160,54 +199,59 @@ namespace YLP
 				if (m_Checksum.empty())
 					UpdateChecksum();
 
-				m_PendingUpdate = !m_Checksum.empty() && remote_sha != m_Checksum;
-
-				if (m_PendingUpdate)
-					LOG_INFO("{}: A new release is out.", m_Name);
+				bool pendingUpdate = !m_Checksum.empty() && remote_sha != m_Checksum;
+				if (!pendingUpdate)
+				{
+					LOG_INFO("[{}]: No new releases found.", m_Name);
+					m_State = Idle;
+				}
 				else
-					LOG_INFO("{}: No new releases found.", m_Name);
+				{
+					Notify("A new release is out!", Notifier::Info, true);
+					m_State = PendingUpdate;
+				}
 
 				if (m_LastCommitHash.empty())
 					GetCommitHash();
 			}
-			catch (std::exception& e)
+			catch (const std::exception& e)
 			{
-				LOG_ERROR("{}: An exception has occured: {}", m_Name, e.what());
+				LOG_ERROR("[{}]: An exception has occured: {}", m_Name, e.what());
 			}
-			m_State = Idle;
 		}
 
-		PsUtils::InjectResult Inject() const
+		PsUtils::InjectResult Inject()
 		{
+			if (!SanityCheck())
+				return PsUtils::InjectResult::Err("File not found!", 2);
+
 			const auto result = PsUtils::Inject(m_TargetProcess, m_DllPath);
 			m_IsInjected = result.success;
 			return result;
 		}
 
 	private:
-		bool m_Exists;
+		bool m_Exists{false};
 
-		std::filesystem::path m_BasePath;
-		std::filesystem::path m_ChecksumPath;
-		std::pair<std::wstring, std::wstring> m_ReleaseUrl;
-		std::pair<std::wstring, std::wstring> m_DownloadUrl;
+		std::filesystem::path m_BasePath{};
+		std::filesystem::path m_ChecksumPath{};
+		std::pair<std::wstring, std::wstring> m_ReleaseUrl{};
+		std::pair<std::wstring, std::wstring> m_DownloadUrl{};
 		std::mutex m_Mutex;
 
 	public:
-		bool m_PendingUpdate;
-		bool m_IsDownloading;
-		bool mutable m_IsInjected;
-		float m_DownloadProgress;
+		bool mutable m_IsInjected{false};
+		float m_DownloadProgress{0.f};
 		eYimVersion m_Version{YimMenuV1};
-		eMenuState m_State{Idle};
+		eMenuViewState m_State{Idle};
 
-		std::string m_Name;
-		std::string m_DllName;
-		std::string m_Checksum;
-		std::string m_LastCommitHash;
-		std::string m_TargetProcess;
-		std::string m_Url;
-		std::filesystem::path m_DllPath;
+		std::string m_Name{};
+		std::string m_DllName{};
+		std::string m_Checksum{};
+		std::string m_LastCommitHash{};
+		std::string m_TargetProcess{};
+		std::string m_Url{};
+		std::filesystem::path m_DllPath{};
 	};
 
 	class YimMenuHandler : public Singleton<YimMenuHandler>

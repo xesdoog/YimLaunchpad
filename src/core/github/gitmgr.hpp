@@ -46,7 +46,8 @@ namespace YLP
 		{
 			NAME,
 			STARS,
-			COMMIT
+			COMMIT,
+			INSTALLED
 		};
 
 		eSortMode m_SortMode = eSortMode::STARS;

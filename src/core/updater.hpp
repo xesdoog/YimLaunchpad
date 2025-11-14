@@ -16,8 +16,8 @@
 
 
 #pragma once
+#pragma comment(lib, "Version.lib")
 
-#include <common.hpp>
 #include <winver.h>
 
 
@@ -27,7 +27,8 @@ namespace YLP
 	{
 	public:
 		Updater() = default;
-		~Updater() = default;
+		~Updater() noexcept = default;
+
 	private:
 		struct Version
 		{
@@ -43,7 +44,12 @@ namespace YLP
 				return oss.str();
 			}
 
-			bool operator<(const Version& other) const noexcept
+			constexpr explicit operator bool() const noexcept
+			{
+				return major != 0;
+			}
+
+			constexpr bool operator<(const Version& other) const noexcept
 			{
 				if (major != other.major)
 					return major < other.major;
@@ -54,22 +60,17 @@ namespace YLP
 				return build < other.build;
 			}
 
-			explicit operator bool() const
-			{
-				return major != 0;
-			}
-
-			bool operator>(const Version& other) const noexcept
+			constexpr bool operator>(const Version& other) const noexcept
 			{
 				return other < *this;
 			}
 
-			bool operator!=(const Version& other) const
+			constexpr bool operator!=(const Version& other) const noexcept
 			{
 				return major != other.major || minor != other.minor || patch != other.patch || build != other.build;
 			}
 
-			bool operator==(const Version& other) const
+			constexpr bool operator==(const Version& other) const noexcept
 			{
 				return major == other.major && minor == other.minor && patch == other.patch && build == other.build;
 			}
@@ -86,12 +87,12 @@ namespace YLP
 			Error,
 		};
 
-		UpdateState GetState() const
+		UpdateState GetState() const noexcept
 		{
 			return m_State;
 		}
 
-		float GetProgress() const
+		float GetProgress() const noexcept
 		{
 			return m_DownloadProgress;
 		}
@@ -101,11 +102,15 @@ namespace YLP
 
 		void Check();
 		void Download();
-		void Start();
+		void Update();
+		void Reset();
 
 	private:
-		Version m_LocalVersion;
+		Version m_LocalVersion{};
 		std::atomic<UpdateState> m_State{Idle};
+		std::pair<std::wstring, std::wstring> m_ReleaseUrl{L"github.com", L"/xesdoog/YLP/releases/latest"};
+		std::filesystem::path m_BackupPath = g_ProjectPath / "update_cache";
+		std::filesystem::path m_DownloadPath = g_ProjectPath / "update_cache" / "YLP.exe";
 		float m_DownloadProgress{0.f};
 	};
 

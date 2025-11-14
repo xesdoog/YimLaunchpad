@@ -282,7 +282,7 @@ namespace YLP
 			{
 				mem_chunk = ReadMemory(current_addr, read_size);
 			}
-			catch (std::exception& e)
+			catch (const std::exception& e)
 			{
 				LOG_ERROR("Failed to read memory!: '{}'", e.what());
 				current_addr += read_size;

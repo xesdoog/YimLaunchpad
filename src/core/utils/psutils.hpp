@@ -39,8 +39,8 @@ namespace YLP::PsUtils
 		std::string message;
 		DWORD win_error = 0;
 
-		static InjectResult Ok();
-		static InjectResult Err(std::string msg, DWORD err = 0);
+		static InjectResult Ok() noexcept;
+		static InjectResult Err(std::string msg, DWORD err = 0) noexcept;
 	};
 
 	struct DllInfo
@@ -95,6 +95,7 @@ namespace YLP::PsUtils
 		    m_Handle(h)
 		{
 		}
+
 		~ScopedHandle()
 		{
 			Close();

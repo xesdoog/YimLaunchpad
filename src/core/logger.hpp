@@ -28,7 +28,6 @@ namespace YLP
 		Logger() noexcept = default;
 		~Logger()
 		{
-
 			std::scoped_lock lock(m_Mutex);
 			if (m_FileStream.is_open())
 			{

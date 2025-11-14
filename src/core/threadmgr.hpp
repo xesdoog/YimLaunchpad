@@ -115,14 +115,12 @@ namespace YLP
 	private:
 		std::atomic<bool> m_StopFlag{false};
 		std::vector<std::thread> m_Workers;
-
+		std::mutex m_Mutex;
+		std::condition_variable m_CV;
 		std::priority_queue<
 		    ScheduledTask,
 		    std::vector<ScheduledTask>,
-		    std::greater<> >
+		    std::greater<>>
 		    m_TaskQueue;
-
-		std::mutex m_Mutex;
-		std::condition_variable m_CV;
 	};
 }

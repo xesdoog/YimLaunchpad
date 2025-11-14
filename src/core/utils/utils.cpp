@@ -405,7 +405,7 @@ namespace YLP::Utils
 				oss << std::hex << std::setw(2) << std::setfill('0') << (int)b;
 			return oss.str();
 		}
-		catch (std::exception& e)
+		catch (const std::exception& e)
 		{
 			LOG_ERROR("An error has occured: {}", e.what());
 			return {};

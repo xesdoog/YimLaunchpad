@@ -18,11 +18,13 @@
 #pragma once
 
 #include <core/gui/fonts/fonts.hpp>
+#include <core/gui/msgbox.hpp>
 #include <core/YimMenu/yimmenu.hpp>
-#include <game_icons/gtav.hpp>
-#include <game_icons/gtave.hpp>
 #include <core/memory/pointers.hpp>
 #include <core/memory/procmon.hpp>
+
+#include "game_icons/gtav.hpp"
+#include "game_icons/gtave.hpp"
 
 
 namespace YLP::Frontend
@@ -31,7 +33,7 @@ namespace YLP::Frontend
 	{
 	public:
 		YimMenuUI() = default;
-		~YimMenuUI() {};
+		~YimMenuUI() noexcept = default;
 
 		static void Draw()
 		{
@@ -64,7 +66,7 @@ namespace YLP::Frontend
 			KVflagsBullet
 		};
 
-		static inline ImFont* GetScaledFont()
+		static inline ImFont* GetScaledFont() noexcept
 		{
 			return Renderer::GetWindowSize().x >= 1200 ? Fonts::Regular : Fonts::Small;
 		}
@@ -73,6 +75,8 @@ namespace YLP::Frontend
 		{
 			m_AttemptedGameLaunch = true;
 			std::string cmd;
+			std::string epicID;
+
 			switch (launcherIndex)
 			{
 			case 0:
@@ -89,18 +93,33 @@ namespace YLP::Frontend
 				break;
 			}
 			case 2:
-				cmd = (version == YimMenuV1) ?
-				    "com.epicgames.launcher://apps/9d2d0eb64d5c44529cece33fe2a46482?action=launch&silent=true" :
-				    ""; // ?????
+				epicID = (version == YimMenuV1) ? "9d2d0eb64d5c44529cece33fe2a46482" : "1af1b2c011864f1f9e432b0c64c6a1f5"; // Thanks to DeadlineEm for providing the Enhanced AppID
+				cmd = "com.epicgames.launcher://apps/" + epicID + "?action=launch&silent=true";
 				break;
 			case 3:
 			{
 				const std::vector<COMDLG_FILTERSPEC> filters = {{L"EXE (*.exe)", L"*.exe"}};
-				cmd = (IO::BrowseFile(filters, L"Select GTA V Executable")).string();
+				std::filesystem::path selected = IO::BrowseFile(filters, L"Select GTA V Executable");
+
+				if (selected.empty())
+					break;
+
+				std::string filename = Utils::StringToLower(selected.filename().string());
+				if (filename.find("gta") == std::string::npos)
+				{
+					LOG_ERROR("Selected file does not appear to be a GTA V executable.");
+					MsgBox::Error("Invalid file", "Selected file does not appear to be a GTA V executable.");
+					m_AttemptedGameLaunch = false;
+					return;
+				}
+
+				cmd = selected.string();
 				break;
 			}
 			default:
-				break;
+				LOG_ERROR("Unknown launcher index: {}", launcherIndex);
+				m_AttemptedGameLaunch = false;
+				return;
 			}
 
 			if (cmd.empty())
@@ -114,10 +133,9 @@ namespace YLP::Frontend
 
 			IO::Open(cmd);
 			if (!monitor->WaitForGameReady(35000))
-			{
 				LOG_WARN("Timed out while waiting for the game to start.");
-				m_AttemptedGameLaunch = false;
-			}
+
+			m_AttemptedGameLaunch = false;
 		}
 
 		static void DrawKeyValue(const char* key,
@@ -154,6 +172,85 @@ namespace YLP::Frontend
 				ImGui::ToolTip("Copy");
 			}
 		};
+
+		static void DrawMenuDownload(YimMenu& menu)
+		{
+			if (menu || menu.GetState() == YimMenu::eMenuViewState::Downloading)
+				return;
+
+			if (ImGui::Button(ICON_DOWNLOAD " Download", ButtonBig))
+			{
+				ThreadManager::Run([&menu] {
+					menu.Download();
+				});
+			}
+		}
+
+		static void DrawMenuControls(YimMenu& menu)
+		{
+			auto state = menu.GetState();
+
+			if (state == YimMenu::eMenuViewState::Downloading)
+				ImGui::ProgressBar(menu.m_DownloadProgress, ButtonBig);
+
+			if (!menu)
+				return;
+
+			switch (state)
+			{
+			case YimMenu::eMenuViewState::PendingUpdate:
+			{
+				if (ImGui::Button(ICON_UPDATE))
+				{
+					ThreadManager::Run([&menu] {
+						menu.Download();
+					});
+				}
+				ImGui::ToolTip("Update");
+				ImGui::SameLine();
+				ImGui::Text("Update Available!");
+				break;
+			}
+			case YimMenu::eMenuViewState::Checking:
+				ImGui::Spinner("Please wait...");
+				break;
+			case YimMenu::eMenuViewState::Idle:
+			{
+				if (ImGui::Button(ICON_REFRESH))
+				{
+					ThreadManager::Run([&menu] {
+						menu.CheckForUpdates();
+					});
+				}
+				ImGui::SameLine();
+				ImGui::Text("Check For Updates");
+			}
+			}
+		}
+
+		static void DrawInjectButton(YimMenu& menu, bool running, bool injected)
+		{
+			if (!menu || menu.GetState() == YimMenu::eMenuViewState::Downloading)
+				return;
+
+			ImGui::Spacing();
+			bool disabledCond = (menu.m_Version == YimMenuV1 && Config().autoInject) || injected || !running;
+			ImGui::BeginDisabled(disabledCond);
+			if (ImGui::Button(ICON_INJECT " Inject", ButtonBig))
+			{
+				ThreadManager::Run([&menu] {
+					auto result = menu.Inject();
+					if (!result.success)
+					{
+						LOG_ERROR("{}", result.message);
+						MsgBox::Error("Error", result.message.c_str());
+					}
+				});
+			}
+			ImGui::EndDisabled();
+			if (disabledCond)
+				ImGui::ToolTip("Currently unavailable.\n\nMake sure the game is running, auto-inject is off, and the menu isn't already injected.");
+		}
 
 		static void DrawMenuCard(YimMenu& menu,
 		    ImTextureID iconTexture,
@@ -194,7 +291,7 @@ namespace YLP::Frontend
 			        pointers.GameVersion.empty() ? "?" : pointers.GameVersion,
 			        pointers.OnlineVersion.empty() ? "?" : pointers.OnlineVersion));
 
-			auto runtime = (isRunning && g_Pointers.Legacy.GameTime) ? g_Pointers.Legacy.GameTime.Read<int32_t>() : 0;
+			auto runtime = (isRunning && pointers.GameTime) ? pointers.GameTime.Read<int32_t>() : 0;
 			DrawKeyValue("Runtime:", Utils::Int32ToTime(runtime / 1000));
 
 			auto baseAddress = monitor->GetBaseAddress();
@@ -223,33 +320,30 @@ namespace YLP::Frontend
 			    "Official GitHub Source: ",
 			    std::format("{} {}", ICON_OCTOCAT, menu.m_Name),
 			    false,
-			    ImGui::GetStyle().Colors[ImGuiCol_Text],
+			    defaultTextCol,
 			    KVflagsHyperlink,
 			    menu.m_Url);
 
 			bool injected = monitor->IsModuleLoaded(menu.m_DllName);
 			std::string shortCommit = menu.m_LastCommitHash.substr(0, std::min<size_t>(7, menu.m_LastCommitHash.size()));
 
-			DrawKeyValue("Short SHA256 Checksum: ", menu.m_Checksum.empty() ? "Unknown" : menu.m_Checksum.substr(0, 16));
+			DrawKeyValue("Short SHA256 Checksum: ", menu.m_Checksum.empty() ? "Unknown" : menu.m_Checksum.substr(0, 8));
 			ImGui::ToolTip(std::format("Full SHA: {}", menu.m_Checksum).c_str());
 
-			DrawKeyValue(
-			    "Last Commit Hash: ",
+			DrawKeyValue("Last Commit Hash: ",
 			    shortCommit.empty() ? "Unknown" : shortCommit,
 			    false,
-			    ImGui::GetStyle().Colors[ImGuiCol_Text],
+			    defaultTextCol,
 			    menu.m_LastCommitHash.empty() ? KVflagsNone : KVflagsHyperlink,
 			    std::format("{}/commit/{}", menu.m_Url, menu.m_LastCommitHash));
 
 			if (!menu.m_LastCommitHash.empty())
-			{
 				ImGui::ToolTip(std::format("Full commit hash: {}", menu.m_LastCommitHash).c_str(), Fonts::Small, true, 0);
-			}
 
 			DrawKeyValue("Injected:",
 			    injected ? ICON_CHECKMARK : ICON_BLOCK,
 			    false,
-			    injected ? ImGreen : ImGui::GetStyle().Colors[ImGuiCol_Text]);
+			    injected ? ImGreen : defaultTextCol);
 
 			ImGui::PopFont();
 			ImGui::EndGroup();
@@ -257,70 +351,10 @@ namespace YLP::Frontend
 			ImGui::Separator();
 			ImGui::Spacing();
 
-			// this spaghetti got tangeled rq...
-			if (menu.m_IsDownloading)
-				ImGui::ProgressBar(menu.m_DownloadProgress, ButtonBig);
-			else
-			{
-				if (!menu)
-				{
-					if (ImGui::Button(std::format("{} {}", ICON_DOWNLOAD, "Download").c_str(), ButtonBig))
-					{
-						ThreadManager::Run([&menu] {
-							menu.Download();
-						});
-					}
-				}
-				else
-				{
-					if (menu.m_PendingUpdate)
-					{
-						if (ImGui::Button(ICON_UPDATE))
-						{
-							ThreadManager::Run([&menu] {
-								menu.Download();
-							});
-						}
-						ImGui::ToolTip("Update");
-						ImGui::SameLine();
-						ImGui::Text("Update Available!");
-					}
-					else
-					{
-						if (menu.m_State == Busy)
-							ImGui::Spinner("Please wait...");
-						else
-						{
-							if (ImGui::Button(ICON_REFRESH))
-							{
-								ThreadManager::Run([&menu] {
-									menu.CheckForUpdates();
-								});
-							}
-							ImGui::SameLine();
-							ImGui::Text("Check For Updates");
-						}
-					}
+			DrawMenuDownload(menu);
+			DrawMenuControls(menu);
+			DrawInjectButton(menu, isRunning, injected);
 
-					ImGui::Spacing();
-					bool disabledCond = (menu.m_Version == YimMenuV1 && Config().autoInject) || menu.m_IsInjected || !monitor->IsProcessRunning();
-					ImGui::BeginDisabled(disabledCond);
-					if (ImGui::Button(std::format("{} Inject", ICON_INJECT).c_str(), ButtonBig))
-					{
-						ThreadManager::Run([&menu] {
-							auto result = menu.Inject();
-							if (!result.success)
-							{
-								LOG_ERROR("{}", result.message);
-								MsgBox::Error("Error", result.message.c_str());
-							}
-						});
-					}
-					ImGui::EndDisabled();
-					if (disabledCond)
-						ImGui::ToolTip("Currently unavailable.\n\nMake sure the game is running, auto-inject is off, and the menu isn't already injected.");
-				}
-			}
 			ImGui::EndChild();
 		}
 

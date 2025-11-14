@@ -17,6 +17,7 @@
 
 #include "threadmgr.hpp"
 
+
 namespace YLP
 {
 	void ThreadManager::InitImpl(size_t threadCount)
@@ -45,14 +46,14 @@ namespace YLP
 			}
 			catch (const std::exception& e)
 			{
-				LOG_ERROR("Detached thread exception: {}", e.what());
+				LOG_ERROR("[ThreadManager]: Detached thread exception: {}", e.what());
 			}
 		}).detach();
 	}
 
 	void ThreadManager::StartImpl(size_t count)
 	{
-		for (size_t i = 0; i < count; ++i)
+		for (size_t i = 0; i < count; i++)
 			m_Workers.emplace_back([this] {
 				WorkerLoop();
 			});
@@ -78,7 +79,7 @@ namespace YLP
 
 	void ThreadManager::EnqueueRepeatingImpl(Task task, std::chrono::milliseconds interval)
 	{
-		EnqueueDelayed([=, this]() {
+		EnqueueDelayed([this, task = std::move(task), interval]() mutable {
 			if (!m_StopFlag.load())
 			{
 				try
@@ -87,9 +88,10 @@ namespace YLP
 				}
 				catch (const std::exception& e)
 				{
-					Logger::Log(Logger::eLogLevel::Error, "Repeating task exception: {}", e.what());
+					LOG_ERROR("[ThreadManager]: Repeating task exception: {}", e.what());
 				}
-				EnqueueRepeating(task, interval);
+
+				EnqueueRepeating(std::move(task), interval);
 			}
 		},
 		    interval);
@@ -97,38 +99,45 @@ namespace YLP
 
 	void ThreadManager::WorkerLoop()
 	{
-		while (!m_StopFlag.load())
+		using clock = std::chrono::steady_clock;
+
+		while (true)
 		{
 			std::unique_lock lock(m_Mutex);
-			if (m_TaskQueue.empty())
-			{
-				m_CV.wait(lock, [this] {
-					return m_StopFlag.load() || !m_TaskQueue.empty();
-				});
-			}
-			else
-			{
-				auto now = std::chrono::steady_clock::now();
-				auto& next = m_TaskQueue.top();
-				if (now >= next.executeAt)
-				{
-					auto task = std::move(next.task);
-					m_TaskQueue.pop();
-					lock.unlock();
+			m_CV.wait(lock, [this]() {
+				return m_StopFlag.load() || !m_TaskQueue.empty();
+			});
 
-					try
-					{
-						task();
-					}
-					catch (const std::exception& e)
-					{
-						Logger::Log(Logger::eLogLevel::Error, "Task exception: {}", e.what());
-					}
-				}
-				else
-				{
-					m_CV.wait_until(lock, next.executeAt);
-				}
+			if (m_StopFlag.load() && m_TaskQueue.empty())
+				return;
+
+			if (m_TaskQueue.empty())
+				continue;
+
+			auto next = m_TaskQueue.top();
+			auto now = clock::now();
+
+			if (now < next.executeAt)
+			{
+				m_CV.wait_until(lock, next.executeAt);
+				continue;
+			}
+
+			Task task = std::move(next.task);
+			m_TaskQueue.pop();
+			lock.unlock();
+
+			try
+			{
+				task();
+			}
+			catch (const std::exception& e)
+			{
+				LOG_ERROR("[ThreadManager]: Task exception: {}", e.what());
+			}
+			catch (...)
+			{
+				LOG_ERROR("[ThreadManager]: Caught unknown exception!");
 			}
 		}
 	}

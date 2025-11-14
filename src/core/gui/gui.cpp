@@ -16,6 +16,7 @@
 
 
 #include "gui.hpp"
+#include "notifier.hpp"
 #include <core/memory/pointers.hpp>
 
 
@@ -37,7 +38,7 @@ namespace YLP
 		m_ActiveTab = m_Tabs.front().get();
 	}
 
-	bool GUI::AddTabImpl(const char* name, GuiCallBack&& callback, std::optional<const char*> hint)
+	bool GUI::AddTabImpl(const std::string_view& name, GuiCallBack&& callback, std::optional<std::string_view> hint)
 	{
 		for (const auto& tab : m_Tabs)
 		{
@@ -47,6 +48,18 @@ namespace YLP
 
 		m_Tabs.push_back(std::make_shared<Tab>(Tab{name, std::move(callback), hint}));
 		return true;
+	}
+
+	void GUI::SetActiveTabImpl(const std::string_view& name)
+	{
+		for (auto& tab : m_Tabs)
+		{
+			if (tab->m_Name == name)
+			{
+				m_ActiveTab = tab.get();
+				break;
+			}
+		}
 	}
 
 	void GUI::DrawImpl()
@@ -92,8 +105,9 @@ namespace YLP
 		if (tabCount == 0)
 			return;
 
+		ImGuiStyle& style = ImGui::GetStyle();
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
-		const float spacing = ImGui::GetStyle().ItemSpacing.x;
+		const float spacing = style.ItemSpacing.x;
 		const float availWidth = ImGui::GetContentRegionAvail().x;
 		const float iconSize = 40.0f;
 		const float tabHeight = 51.0f;
@@ -118,7 +132,7 @@ namespace YLP
 			ImRect rect(iconPos, ImVec2(iconPos.x + iconSize, iconPos.y + iconSize));
 
 			ImGui::PushID(i);
-			ImGui::InvisibleButton(tab.m_Name, rect.GetSize());
+			ImGui::InvisibleButton(tab.m_Name.data(), rect.GetSize());
 			bool hovered = ImGui::IsItemHovered();
 			bool clicked = ImGui::IsItemClicked();
 			bool held = hovered && ImGui::IsMouseDown(0);
@@ -137,15 +151,15 @@ namespace YLP
 				    col1);
 			}
 
-			ImVec2 textSize = ImGui::CalcTextSize(tab.m_Name);
+			ImVec2 textSize = ImGui::CalcTextSize(tab.m_Name.data());
 			ImVec2 textPos = ImVec2(
 			    rect.Min.x + (iconSize - textSize.x) * 0.5f,
 			    rect.Min.y + (iconSize - textSize.y) * 0.5f);
 
-			drawList->AddText(textPos, selected ? IM_COL32_BLACK : IM_COL32_WHITE, tab.m_Name);
+			drawList->AddText(textPos, selected ? IM_COL32_BLACK : IM_COL32_WHITE, tab.m_Name.data());
 
 			if (hovered && tab.m_Hint.has_value())
-				ImGui::ToolTip(tab.m_Hint.value(), Fonts::Regular);
+				ImGui::ToolTip(tab.m_Hint.value().data(), Fonts::Regular);
 
 			if (clicked)
 			{
@@ -165,7 +179,6 @@ namespace YLP
 			if (i < tabCount - 1)
 				ImGui::SameLine(0, spacing);
 		}
-		ImGui::PopFont();
 
 		float speed = ImGui::GetIO().DeltaTime * 12.0f;
 		underlineX = ImLerp(underlineX, underlineTargetX, speed);
@@ -176,6 +189,26 @@ namespace YLP
 		ImVec2 underlineEnd(underlineX + underlineW, underlinePos.y + underlineHeight);
 
 		drawList->AddRectFilled(underlinePos, underlineEnd, IM_COL32(100, 180, 255, 255), 1.5f);
+
+		const char* notifIcon = Notifier::IsViewed() ? ICON_NOTIFICATION_NONE : ICON_NOTIFICATION_AVAIL;
+		ImVec4 notifColor = Notifier::IsViewed() ? ImGui::GetStyle().Colors[ImGuiCol_Text] : ImVec4(1.0f, 0.8f, 0.02f, 1.0f);
+		ImGui::SetCursorPos(ImVec2(ImGui::GetContentRegionAvail().x - 30.f, 16.5f));
+		ImGui::TextColored(Notifier::IsOpen() ? style.Colors[ImGuiCol_ButtonActive] : notifColor, notifIcon);
+		ImGui::PopFont();
+
+		if (ImGui::IsItemHovered())
+			ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+		if (ImGui::IsItemClicked())
+			Notifier::Toggle();
+
+		ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 0.f);
+		ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+		Notifier::Draw();
+		ImGui::PopStyleVar();
+		ImGui::PopStyleColor();
+
+		ImGui::Dummy(ImVec2(1, 1));
 	}
 
 	void GUI::DrawDebugConsoleImpl()
@@ -333,7 +366,7 @@ namespace YLP
 	{
 		auto version = YLPUpdater.GetLocalVersion();
 		ImGui::PushFont(Fonts::Small);
-		ImGui::Text("YLP v%d.%d.%d.%d", version.major, version.build, version.minor, version.patch);
+		ImGui::Text("YLP v%s", version.ToString().c_str());
 		ImGui::PopFont();
 		ImGui::Separator();
 
@@ -355,10 +388,11 @@ namespace YLP
 			break;
 		case Updater::UpdateState::Pending:
 		{
-			if (ImGui::Button(ICON_DOWNLOAD))
+			if (ImGui::Button(ICON_UPDATE))
 				YLPUpdater.Download();
+			ImGui::ToolTip("Update");
 			ImGui::SameLine();
-			ImGui::Text("A new version of YLP is out");
+			ImGui::Text("A new version of YLP is out!");
 			break;
 		}
 		case Updater::UpdateState::Downloading:
@@ -396,7 +430,7 @@ namespace YLP
 		ImGui::HelpMarker("Automatically exit after injecting a dll **(Only for auto-inject)**.");
 
 		ImGui::Spacing();
-		ImGui::TitleText("Themes", true);
+		ImGui::TitleText("UI Theme", true);
 		DrawThemes();
 	}
 
@@ -490,7 +524,7 @@ The author shall not be held liable for any damages, data loss, or issues arisin
 		ImGui::InfoCallout(ImGui::ImCalloutType::Warning,
 		    R"(
 Please be cautious when downloading tools or mods from the internet.
-Only download from official repositories or verified community sources.
+Only download from official repositories or verified community sources and never disable your anti-virus. If you trust the source, whitelist it in your anti-virus settings.
 Open-source projects like YLP allow you to inspect the code yourself; a core value that protects both your system and your data.
 )");
 		DrawHeaderAndText("Licenses and Acknowledgements",
@@ -506,12 +540,8 @@ We extend our gratitude to the open-source community for their incredible contri
 		ImGui::NewLine();
 		ImGui::Separator();
 		ImGui::Spacing();
-		// ImGui::PushFont(Fonts::Small);
-		ImGui::TextLinkOpenURL(std::format("{} YLP", ICON_OCTOCAT).c_str(), "https://github.com/xesdoog/YLP");
-		ImGui::TextLinkOpenURL("License", "https://www.gnu.org/licenses/gpl-3.0.en.html");
-		ImGui::TextLinkOpenURL("3rd Party", "https://github.com/xesdoog/YLP/blob/main/Thirdparty/Readme.md");
-		ImGui::TextLinkOpenURL("IcoMoon.io", "https://https://icomoon.io/");
-		ImGui::TextLinkOpenURL("JetBrainsMono", "https://jetbrains.com/lp/mono/");
-		// ImGui::PopFont();
+		ImGui::TextLinkOpenURL(std::format("{} Source Code", ICON_OCTOCAT).c_str(), "https://github.com/xesdoog/YLP");
+		ImGui::TextLinkOpenURL(std::format("{} Report a Bug", ICON_BUG).c_str(), "https://github.com/xesdoog/ylp/issues/new/choose");
+		ImGui::TextLinkOpenURL(std::format("{} Start a Discussion", ICON_MESSAGE).c_str(), "https://github.com/xesdoog/YLP/discussions/new/choose");
 	}
 }

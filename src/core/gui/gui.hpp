@@ -34,7 +34,7 @@ namespace YLP
 
 	private:
 		GUI() = default;
-		~GUI() = default;
+		~GUI() noexcept = default;
 
 	public:
 		static void Init()
@@ -42,7 +42,7 @@ namespace YLP
 			GetInstance().InitImpl();
 		}
 
-		static bool AddTab(const char* name, GuiCallBack&& callback, std::optional<const char*> hint)
+		static bool AddTab(const std::string_view& name, GuiCallBack&& callback, std::optional<std::string_view> hint)
 		{
 			return GetInstance().AddTabImpl(name, std::move(callback), hint);
 		}
@@ -67,9 +67,14 @@ namespace YLP
 			GetInstance().DrawDebugConsoleImpl();
 		}
 
-		static void ToggleDisableUI(bool toggle)
+		static void ToggleDisableUI(bool toggle) noexcept
 		{
 			GetInstance().m_ShouldDisableUI = toggle;
+		}
+
+		static void SetActiveTab(const std::string_view& name)
+		{
+			GetInstance().SetActiveTabImpl(name);
 		}
 
 		static void DrawAboutSection();
@@ -81,13 +86,14 @@ namespace YLP
 		void DrawTabBarImpl();
 		void DrawDebugConsoleImpl();
 		void DrawSettingsImpl();
-		bool AddTabImpl(const char* name, GuiCallBack&& callback, std::optional<const char*> hint);
+		void SetActiveTabImpl(const std::string_view& name);
+		bool AddTabImpl(const std::string_view& name, GuiCallBack&& callback, std::optional<std::string_view> hint);
 
 		struct Tab
 		{
-			const char* m_Name;
+			std::string_view m_Name;
 			GuiCallBack m_Callback;
-			std::optional<const char*> m_Hint;
+			std::optional<std::string_view> m_Hint;
 		};
 
 		int m_TabIndex = 0;

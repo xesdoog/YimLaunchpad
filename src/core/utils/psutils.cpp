@@ -20,7 +20,7 @@
 
 namespace YLP::PsUtils
 {
-	InjectResult InjectResult::Ok()
+	InjectResult InjectResult::Ok() noexcept
 	{
 		InjectResult r;
 		r.success = true;
@@ -28,7 +28,7 @@ namespace YLP::PsUtils
 		return r;
 	}
 
-	InjectResult InjectResult::Err(std::string msg, DWORD err)
+	InjectResult InjectResult::Err(std::string msg, DWORD err) noexcept
 	{
 		InjectResult r;
 		r.success = false;

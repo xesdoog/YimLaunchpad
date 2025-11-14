@@ -29,7 +29,6 @@ namespace YLP
 		m_AuthToken = ""; // TODO: add optional OAuth (we no longer need it)
 		m_ScriptsPath = g_YimPath / "scripts";
 		m_CacheFile = g_ProjectPath / "repo_cache.json";
-		m_ScriptsPath = g_YimPath / "scripts";
 
 		ThreadManager::RunDelayed([this] {
 			LoadETag();
@@ -67,6 +66,7 @@ namespace YLP
 
 		nlohmann::json j;
 		file >> j;
+		file.close();
 
 		if (j.empty())
 		{
@@ -87,61 +87,61 @@ namespace YLP
 		bool should_update_cache = false;
 		for (auto& [name, repo] : repositories.items())
 		{
-			Repository info = repo.get<Repository>();
+			Repository script = repo.get<Repository>();
 			std::filesystem::path localPath = m_ScriptsPath / name;
 			std::filesystem::path disabledPath = m_ScriptsPath / "disabled" / name;
 			bool installed = IsScriptInstalled(name);
-			bool disabled = (std::filesystem::exists(disabledPath) && IO::HasLuaFiles(disabledPath) && !std::filesystem::exists(localPath));
+			bool disabled = (IO::Exists(disabledPath) && IO::HasLuaFiles(disabledPath) && !IO::Exists(localPath));
 
-			if (info.isInstalled && !installed)
+			if (script.isInstalled && !installed)
 			{
-				info.isDisabled = false;
-				info.isInstalled = false;
-				info.currentPath = "";
-				info.lastChecked = std::chrono::system_clock::time_point{};
+				script.isDisabled  = false;
+				script.isInstalled = false;
+				script.currentPath = "";
+				script.lastChecked = std::chrono::system_clock::time_point{};
+
 				should_update_cache = true;
 			}
 
-			if (info.isInstalled != installed)
+			if (script.isInstalled != installed)
 			{
-				info.isInstalled = installed;
+				script.isInstalled = installed;
 				should_update_cache = true;
 			}
 
-			if (info.isDisabled != disabled)
+			if (script.isDisabled != disabled)
 			{
-				info.isDisabled = disabled;
+				script.isDisabled = disabled;
 				should_update_cache = true;
 			}
 
-			info.isPendingUpdate = info.is_outdated();
+			script.isPendingUpdate = script.is_outdated();
 
 			if (installed)
-				info.currentPath = disabled ? disabledPath : localPath;
+				script.currentPath = disabled ? disabledPath : localPath;
 			else
-				info.currentPath = "";
+				script.currentPath = "";
 
-			newRepos[name] = std::move(info);
+			newRepos[name] = std::move(script);
 		}
-
-		if (should_update_cache)
-			SaveCache();
 
 		{
 			std::unique_lock lock(m_Mutex);
 			m_Repos.swap(newRepos);
+
+			if (should_update_cache)
+				SaveCache();
 		}
 
 		if (log)
 			LOG_INFO("Loaded {} Lua repositories from cache", m_Repos.size());
 
-		file.close();
 		return true;
 	}
 
 	void GitHubManager::SaveCacheImpl()
 	{
-		if (m_Repos.size() == 0)
+		if (m_Repos.empty())
 			return;
 
 		nlohmann::json j;
@@ -153,6 +153,7 @@ namespace YLP
 
 		std::ofstream file(m_CacheFile);
 		file << j.dump(2);
+		file.close();
 	}
 
 	void GitHubManager::FetchRepositoriesImpl()
@@ -219,24 +220,24 @@ namespace YLP
 					continue;
 				}
 
-				Repository info;
+				Repository script;
 
-				info.name = name;
-				info.description = repo.value("description", "");
-				info.htmlUrl = std::format("https://github.com/{}/{}", m_OrgName, name);
-				info.stars = repo.value("stargazers_count", 0);
-				info.isInstalled = IsScriptInstalled(name);
-				info.lastUpdate = repo.value("pushed_at", "");
+				script.name = name;
+				script.stars = repo.value("stargazers_count", 0);
+				script.lastUpdate = repo.value("pushed_at", "");
+				script.description = repo.value("description", "");
+				script.isInstalled = IsScriptInstalled(name);
+				script.htmlUrl = std::format("https://github.com/{}/{}", m_OrgName, name);
 
 				std::filesystem::path enabledPath = m_ScriptsPath / name;
 				std::filesystem::path disabledPath = m_ScriptsPath / "disabled" / name;
-				info.isDisabled = IO::Exists(disabledPath) && IO::HasLuaFiles(disabledPath) && !IO::Exists(enabledPath);
-				info.currentPath = "";
+				script.isDisabled = IO::Exists(disabledPath) && IO::HasLuaFiles(disabledPath) && !IO::Exists(enabledPath);
+				script.currentPath = "";
 
-				if (info.isInstalled)
-					info.currentPath = info.isDisabled ? disabledPath : enabledPath;
+				if (script.isInstalled)
+					script.currentPath = script.isDisabled ? disabledPath : enabledPath;
 
-				newRepos[name] = info;
+				newRepos[name] = script;
 			}
 
 			{
@@ -249,9 +250,9 @@ namespace YLP
 			SortRepositories();
 			m_State = eLoadState::READY;
 		}
-		catch (std::exception& e)
+		catch (const std::exception& e)
 		{
-			LOG_ERROR("Exception caught while fetching repositories from Github: {}", e.what());
+			LOG_ERROR("Exception caught while fetching repositories from Github! {}", e.what());
 		}
 	}
 
@@ -265,8 +266,9 @@ namespace YLP
 				SaveCache();
 				m_State = eLoadState::READY;
 			}
-			catch (...)
+			catch (const std::exception& e)
 			{
+				LOG_ERROR("Failed to refresh repositories! {}", e.what());
 				m_State = eLoadState::FAILED;
 			}
 		});
@@ -279,16 +281,21 @@ namespace YLP
 			std::shared_lock lock(m_Mutex);
 			sorted.reserve(m_Repos.size());
 			for (auto& [name, repo] : m_Repos)
+			{
+				if (m_SortMode == eSortMode::INSTALLED && !repo.isInstalled)
+					continue;
+
 				sorted.push_back(&repo);
+			}
 		}
 
 		std::sort(sorted.begin(), sorted.end(), [mode = m_SortMode](auto a, auto b) {
 			switch (mode)
 			{
-			case eSortMode::NAME: return a->name < b->name;
-			case eSortMode::STARS: return a->stars > b->stars;
+			case eSortMode::NAME:   return a->name < b->name;
+			case eSortMode::STARS:  return a->stars > b->stars;
 			case eSortMode::COMMIT: return a->lastUpdate > b->lastUpdate;
-			default: return false;
+			default:                return false;
 			}
 		});
 
@@ -361,7 +368,10 @@ namespace YLP
 			const auto extractDir = cacheDir / (name + "_extracted");
 			const auto installDir = m_ScriptsPath / name;
 			const std::wstring host = L"github.com";
-			const std::wstring path = L"/" + std::wstring(m_OrgName.begin(), m_OrgName.end()) + L"/" + std::wstring(name.begin(), name.end()) + L"/archive/refs/heads/main.zip";
+			const std::wstring path = L"/"
+				+ std::wstring(m_OrgName.begin(), m_OrgName.end())
+				+ L"/" + std::wstring(name.begin(), name.end())
+				+ L"/archive/refs/heads/main.zip";
 
 			auto response = Utils::HttpRequest(host, path, {}, &zipPath, &repo.downloadProgress);
 			if (!response.success)
@@ -443,7 +453,7 @@ namespace YLP
 	{
 		auto enabled_path = m_ScriptsPath / name;
 		auto disabled_path = m_ScriptsPath / "disabled" / name;
-		return (std::filesystem::exists(enabled_path) && IO::HasLuaFiles(enabled_path)) || (std::filesystem::exists(disabled_path) && IO::HasLuaFiles(disabled_path));
+		return (IO::Exists(enabled_path) && IO::HasLuaFiles(enabled_path)) || (IO::Exists(disabled_path) && IO::HasLuaFiles(disabled_path));
 	}
 
 }
