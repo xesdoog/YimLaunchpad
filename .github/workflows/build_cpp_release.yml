@@ -87,9 +87,10 @@ jobs:
           $commit  = git rev-parse --short HEAD
           $file = "src/resources/version.rc"
           $content = Get-Content $file -Raw
-          $content = $content -replace 'FileVersion", *"[^"]*"', ('FileVersion", "{0}"' -f $version)
-          $content = $content -replace 'ProductVersion", *"[^"]*"', ('ProductVersion", "{0}"' -f $version)
-          $content = $content -replace 'CommitHash", *"[^"]*"', ('CommitHash", "{0}"' -f $commit)
+          $content = $content -replace 'VALUE\s+"FileVersion"\s*,\s*"[^"]*"', "VALUE `"FileVersion`", `"$version`""
+          $content = $content -replace 'VALUE\s+"ProductVersion"\s*,\s*"[^"]*"', "VALUE `"ProductVersion`", `"$version`""
+          $content = $content -replace 'VALUE\s+"CommitHash"\s*,\s*"[^"]*"', "VALUE `"CommitHash`", `"$commit`""
+
           Set-Content -Path $file -Value $content
     
       - name: Setup MSVC
