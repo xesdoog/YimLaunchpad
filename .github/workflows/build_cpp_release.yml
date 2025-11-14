@@ -83,12 +83,16 @@ jobs:
       - name: Update Version Resource
         shell: pwsh
         run: |
-          $version = ${{ steps.get_version.outputs.new_tag }}
+          $versionNumber = ${{ steps.get_version.outputs.ffi_tag }}
+          $versionString = ${{ steps.get_version.outputs.new_tag }}
           $commit  = git rev-parse --short HEAD
-          $file = "src/resources/version.rc"
+          $file = "./src/resources/version.rc"
           $content = Get-Content $file -Raw
-          $content = $content -replace 'VALUE\s+"FileVersion"\s*,\s*"[^"]*"', "VALUE `"FileVersion`", `"$version`""
-          $content = $content -replace 'VALUE\s+"ProductVersion"\s*,\s*"[^"]*"', "VALUE `"ProductVersion`", `"$version`""
+
+          $content = $content -replace 'FILEVERSION\s+[^\\r\\n]+', "FILEVERSION $versionNumber"
+          $content = $content -replace 'PRODUCTVERSION\s+[^\\r\\n]+', "PRODUCTVERSION $versionNumber"
+          $content = $content -replace 'VALUE\s+"FileVersion"\s*,\s*"[^"]*"', "VALUE `"FileVersion`", `"$versionString`""
+          $content = $content -replace 'VALUE\s+"ProductVersion"\s*,\s*"[^"]*"', "VALUE `"ProductVersion`", `"$versionString`""
           $content = $content -replace 'VALUE\s+"CommitHash"\s*,\s*"[^"]*"', "VALUE `"CommitHash`", `"$commit`""
 
           Set-Content -Path $file -Value $content
@@ -98,7 +102,7 @@ jobs:
         with:
           arch: amd64
 
-      - name: Generate CMake project
+      - name: Generate CMake Files
         run: cmake -D CMAKE_BUILD_TYPE=Release -D OPTIMIZE=YES -S. -Bbuild -G Ninja
 
       - name: Build x64 Executable

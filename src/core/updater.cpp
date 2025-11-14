@@ -28,7 +28,7 @@ namespace YLP
 	{
 		m_DownloadProgress = 0.f;
 		m_State = Idle;
-		IO::RemoveAll(m_BackupPath);
+		IO::RemoveAll(g_ProjectPath / "update_cache");
 	}
 
 	Updater::Version Updater::GetLocalVersion()
@@ -149,11 +149,13 @@ namespace YLP
 			}
 
 			m_State = Downloading;
-			IO::CreateFolders(m_BackupPath);
+			std::filesystem::path cachePath = g_ProjectPath / "update_cache";
+			std::filesystem::path downloadPath = cachePath / "YLP.exe";
+			IO::CreateFolders(cachePath);
 			auto response = Utils::HttpRequest(m_ReleaseUrl.first,
 			    m_ReleaseUrl.second + L"/download/YLP.exe",
 			    {},
-			    &m_DownloadPath,
+			    &downloadPath,
 			    &m_DownloadProgress); // TODO: wrap this in a util function
 
 			if (!response.success)

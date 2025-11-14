@@ -109,8 +109,6 @@ namespace YLP
 		Version m_LocalVersion{};
 		std::atomic<UpdateState> m_State{Idle};
 		std::pair<std::wstring, std::wstring> m_ReleaseUrl{L"github.com", L"/xesdoog/YLP/releases/latest"};
-		std::filesystem::path m_BackupPath = g_ProjectPath / "update_cache";
-		std::filesystem::path m_DownloadPath = g_ProjectPath / "update_cache" / "YLP.exe";
 		float m_DownloadProgress{0.f};
 	};
 
