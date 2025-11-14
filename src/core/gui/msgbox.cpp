@@ -59,7 +59,7 @@ namespace YLP
 
 		UINT flags = GetMsgBoxFlags(buttons) | GetMsgBoxIcon(icon);
 		PlaySoundW(GetSoundAlias(icon), nullptr, SND_ALIAS | SND_ASYNC);
-		return MessageBoxW(nullptr, message.c_str(), title.c_str(), flags);
+		return MessageBoxW(g_Hwnd, message.c_str(), title.c_str(), flags);
 	}
 
 	PCWSTR MsgBox::GetIcon(Icon icon)
