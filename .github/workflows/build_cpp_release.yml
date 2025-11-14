@@ -83,8 +83,8 @@ jobs:
       - name: Update Version Resource
         shell: pwsh
         run: |
-          $versionNumber = ${{ steps.get_version.outputs.ffi_tag }}
-          $versionString = ${{ steps.get_version.outputs.new_tag }}
+          $versionNumber = "${{ steps.get_version.outputs.ffi_tag }}"
+          $versionString = "${{ steps.get_version.outputs.new_tag }}"
           $commit  = git rev-parse --short HEAD
           $file = "./src/resources/version.rc"
           $content = @"
